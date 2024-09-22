@@ -357,8 +357,8 @@ bool ComputeClusterVolume(int maxThreads, int clusterCount, ccHObject* clusterGr
 		float ymax = maxBound.y;
 		CCVector3 extent = maxBound - minBound;
 		CCVector3 center = minBound + extent / 2;
-		minBound += extent / 2 * 0.9;
-		maxBound -= extent / 2 * 0.9;
+		minBound += extent / static_cast<PointCoordinateType>(2 * 0.9);
+		maxBound -= extent / static_cast<PointCoordinateType>(2 * 0.9);
 		maxBound.y = ymax + (ymax - ymin) / 2.0;
 
 		s_VoxFallParams.centroid = minBound + (maxBound - minBound) / 1.5;
@@ -562,20 +562,20 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 
 	s_VoxFallParams.volumes.reserve(s_VoxFallParams.clusterLabel);
 	s_VoxFallParams.nonEmptyVoxelsVisited.resize(voxelGrid.innerCellCount(), false);
-	for (unsigned label = 1; label < s_VoxFallParams.clusterLabel; ++label)
+	for (int label = 1; label < s_VoxFallParams.clusterLabel; ++label)
 	{
-		auto it = std::find(s_VoxFallParams.clusterSF->begin(), s_VoxFallParams.clusterSF->end(), label);
+		auto it = std::find(s_VoxFallParams.clusterSF->begin(), s_VoxFallParams.clusterSF->end(), static_cast<ScalarType>(label));
 		while (it != s_VoxFallParams.clusterSF->end())
 		{
 			s_VoxFallParams.clusterIndices.push_back(it - s_VoxFallParams.clusterSF->begin());
-			it = std::find(it + 1, s_VoxFallParams.clusterSF->end(), label);
+			it = std::find(it + 1, s_VoxFallParams.clusterSF->end(), static_cast<ScalarType>(label));
 		}
 
 		s_VoxFallParams.currentLabel = label;
 		s_VoxFallParams.clusterOutterVoxelCount = 0;
 
 
-		if (!ComputeClusterVolume(	maxThreadCount, s_VoxFallParams.clusterIndices.size() ))
+		if (!ComputeClusterVolume(	maxThreadCount, static_cast<int>(s_VoxFallParams.clusterIndices.size()) ))
 		{
 			errorMessage = "Failed to compute cluster volume!";
 			return false;
@@ -610,7 +610,7 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 		ScalarType changeType = static_cast<ScalarType>(s_VoxFallParams.changeType);
 		ScalarType uncertainty = static_cast<ScalarType>(pow(s_VoxFallParams.voxelSize, 3) * s_VoxFallParams.clusterOutterVoxelCount / 2);
 		ScalarType volume = static_cast<ScalarType>(pow(s_VoxFallParams.voxelSize, 3) * s_VoxFallParams.clusterIndices.size() + uncertainty);
-		s_VoxFallParams.volumes[label - 1] = static_cast<float>(volume);
+		s_VoxFallParams.volumes[label - 1] = volume;
 
 		for (unsigned i = 0; i < s_VoxFallParams.clusterIndices.size(); i++)
 		{
@@ -653,7 +653,7 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 		//we create a new group to store all output meshes as 'VoxFall clusters'
 		ccHObject* ccGroup = new ccHObject(mesh1->getName() + "_to_" + mesh2->getName() + QString(" [VoxFall clusters] (voxel %1 m)").arg(s_VoxFallParams.voxelSize));
 
-		for (unsigned label = 1; label < s_VoxFallParams.clusterLabel; ++label)
+		for (int label = 1; label < s_VoxFallParams.clusterLabel; ++label)
 		{
 			std::vector<unsigned int> indices;
 			auto it = std::find(s_VoxFallParams.clusters.begin(), s_VoxFallParams.clusters.end(), label);
@@ -744,4 +744,5 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 	if (app)
 		app->refreshAll();
 
+	return true;
 }
