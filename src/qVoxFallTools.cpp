@@ -67,7 +67,7 @@ ccBox* qVoxFallTransform::CreateVoxelMesh(CCVector3 V, float voxelSize, int voxe
 	const Vector3Tpl<float> X(1, 0, 0);
 	const Vector3Tpl<float> Y(0, 1, 0);
 	const Vector3Tpl<float> Z(0, 0, 1);
-	ccGLMatrix* matrix = &ccGLMatrix::ccGLMatrix(X, Y, Z, V);
+	ccGLMatrix* matrix = new ccGLMatrix(X, Y, Z, V);
 
 	ccBox* voxel = new ccBox(dims, matrix, name);
 	voxel->computePerTriangleNormals();

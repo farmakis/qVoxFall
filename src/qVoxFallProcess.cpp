@@ -18,6 +18,7 @@
 #include "qVoxFallProcess.h"
 
 //system
+#include <atomic>
 #include <unordered_set>
 
 //local
@@ -287,7 +288,7 @@ bool ClusterEmptySpace(int maxThreads, int voxelCount, GenericProgressCallback* 
 bool ComputeClusterVolume(int maxThreads, int clusterCount, ccHObject* clusterGroup = nullptr)
 {
 
-	bool error = false;
+	std::atomic<bool> error(false);
 	CCVector3 minBound = s_VoxFallParams.maxBound;
 	CCVector3 maxBound = s_VoxFallParams.minBound;
 	int count = 0;
@@ -302,6 +303,10 @@ bool ComputeClusterVolume(int maxThreads, int clusterCount, ccHObject* clusterGr
 	for (int i = 0; i < clusterCount; i++)
 	{
 		int index = s_VoxFallParams.clusterIndices[i];
+
+		if(error) {
+			continue;
+		}
 
 		std::unordered_set<unsigned int> nbs_next(s_VoxFallParams.nbs[index].begin(), s_VoxFallParams.nbs[index].end());
 		while (!nbs_next.empty())
@@ -346,9 +351,7 @@ bool ComputeClusterVolume(int maxThreads, int clusterCount, ccHObject* clusterGr
 		if (!s_VoxFallParams.nProgress->oneStep())
 		{
 			error = true;
-			break;
 		}
-		if (error) break;
 	}
 
 	if (s_VoxFallParams.exportLossGain)
@@ -439,7 +442,7 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 	s_VoxFallParams.isEmptyBefore.resize(voxelGrid.innerCellCount(), true);
 	if (s_VoxFallParams.exportBlocksAsMeshes)
 	{
-		s_VoxFallParams.clusters.resize(voxelGrid.innerCellCount(), NULL);
+		s_VoxFallParams.clusters.resize(voxelGrid.innerCellCount(), 0);
 	}
 
 	//allocate cluster ID SF
