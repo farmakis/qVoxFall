@@ -408,8 +408,8 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 	mesh->merge(mesh2, false);
 
 	auto transform = qVoxFallTransform(azimuth);
-	mesh->applyGLTransformation_recursive(transform.matrix);
-	mesh1->applyGLTransformation_recursive(transform.matrix);
+	mesh->applyGLTransformation_recursive(&transform.matrix);
+	mesh1->applyGLTransformation_recursive(&transform.matrix);
 
 	mesh1->setEnabled(false);
 
@@ -684,7 +684,7 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 			}
 			indices.clear();
 		}
-		ccGroup->applyGLTransformation_recursive(transform.inverse);
+		ccGroup->applyGLTransformation_recursive(&transform.inverse);
 		ccGroup->setVisible(true);
 		app->addToDB(ccGroup);
 
@@ -733,8 +733,8 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 	}
 
 	//prepare export cloud
-	mesh1->applyGLTransformation_recursive(transform.inverse);
-	s_VoxFallParams.voxfall->applyGLTransformation_recursive(transform.inverse);
+	mesh1->applyGLTransformation_recursive(&transform.inverse);
+	s_VoxFallParams.voxfall->applyGLTransformation_recursive(&transform.inverse);
 	sfIdx = s_VoxFallParams.voxfall->getScalarFieldIndexByName(CLUSTER_SF_NAME);
 	s_VoxFallParams.voxfall->setCurrentDisplayedScalarField(sfIdx);;
 	s_VoxFallParams.voxfall->showSF(true);
