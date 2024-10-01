@@ -29,6 +29,8 @@
 #include <ccPointCloud.h>
 #include <ccScalarField.h>
 #include <ccBox.h>
+#include <ccGLMatrix.h>
+
 
 #include <unordered_map>
 
@@ -39,8 +41,8 @@ class qVoxFallTransform
 	float zRot;
 
 public:
-	ccGLMatrix* matrix;
-	ccGLMatrix* inverse;
+	ccGLMatrix matrix;
+	ccGLMatrix inverse;
 	qVoxFallTransform(double azimuth)
 	{
 		az = azimuth;
@@ -50,13 +52,13 @@ public:
 		const Vector3Tpl<float> Y(-std::sin(zRot), std::cos(zRot), 0);
 		const Vector3Tpl<float> Z(0, 0, 1);
 		const Vector3Tpl<float> Tr(0, 0, 0);
-		matrix = &ccGLMatrix::ccGLMatrix(X, Y, Z, Tr);
+		matrix = ccGLMatrix(X, Y, Z, Tr);
 
 		const Vector3Tpl<float> rX(std::cos(-zRot), std::sin(-zRot), 0);
 		const Vector3Tpl<float> rY(-std::sin(-zRot), std::cos(-zRot), 0);
 		const Vector3Tpl<float> rZ(0, 0, 1);
 		const Vector3Tpl<float> rTr(0, 0, 0);
-		inverse = &ccGLMatrix::ccGLMatrix(rX, rY, rZ, rTr);
+		inverse = ccGLMatrix(rX, rY, rZ, rTr);
 	}
 
 	static ccBox* CreateVoxelMesh(CCVector3 V, float voxelSize, int voxelIdx);

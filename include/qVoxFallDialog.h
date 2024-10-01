@@ -53,10 +53,10 @@ public:
 	//! Returns the max number of threads to use
 	int getMaxThreadCount() const;
 
-	void qVoxFallDialog::loadParamsFromPersistentSettings();
-	void qVoxFallDialog::loadParamsFrom(const QSettings& settings);
-	void qVoxFallDialog::saveParamsToPersistentSettings();
-	void qVoxFallDialog::saveParamsTo(QSettings& settings);
+	void loadParamsFromPersistentSettings();
+	void loadParamsFrom(const QSettings& settings);
+	void saveParamsToPersistentSettings();
+	void saveParamsTo(QSettings& settings);
 
 protected:
 
