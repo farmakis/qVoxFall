@@ -567,16 +567,16 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 	s_VoxFallParams.nonEmptyVoxelsVisited.resize(voxelGrid.innerCellCount(), false);
 	for (int label = 1; label < s_VoxFallParams.clusterLabel; ++label)
 	{
-		auto it = std::find(s_VoxFallParams.clusterSF->begin(), s_VoxFallParams.clusterSF->end(), static_cast<ScalarType>(label));
-		while (it != s_VoxFallParams.clusterSF->end())
+		for (unsigned i = 0; i < static_cast<unsigned>(s_VoxFallParams.clusterSF->size()); ++i)
 		{
-			s_VoxFallParams.clusterIndices.push_back(it - s_VoxFallParams.clusterSF->begin());
-			it = std::find(it + 1, s_VoxFallParams.clusterSF->end(), static_cast<ScalarType>(label));
+			if (s_VoxFallParams.clusterSF->getValue(i) == static_cast<ScalarType>(label))
+			{
+				s_VoxFallParams.clusterIndices.push_back(i);
+			}
 		}
 
 		s_VoxFallParams.currentLabel = label;
 		s_VoxFallParams.clusterOutterVoxelCount = 0;
-
 
 		if (!ComputeClusterVolume(	maxThreadCount, static_cast<int>(s_VoxFallParams.clusterIndices.size()) ))
 		{
