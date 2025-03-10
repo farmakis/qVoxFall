@@ -1,7 +1,7 @@
 {
 	"type" : "Standard",
 	"core" : true,
-	"name" : "VOXFALL",
+	"name" : "VoxFall",
 	"icon" : ":/CC/plugin/qVoxFall/images/icon.png",
 	"description": "Voxelized rockFall (VoxFall).",
 	"authors" : [
