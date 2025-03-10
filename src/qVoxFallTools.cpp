@@ -70,7 +70,6 @@ ccBox* qVoxFallTransform::CreateVoxelMesh(CCVector3 V, float voxelSize, int voxe
 	const ccGLMatrix matrix(X, Y, Z, V);
 
 	ccBox* voxel = new ccBox(dims, &matrix, name);
-	voxel->computePerTriangleNormals();
 	return voxel;
 }
 
