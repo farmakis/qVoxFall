@@ -666,15 +666,29 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 				it = std::find(it + 1, s_VoxFallParams.clusters.end(), label);
 			}
 
-			ccHObject* clusterGroup = new ccHObject(QString("Cluster#%1 - (v: %2 m3)").arg(label).arg(s_VoxFallParams.volumes[label - 1]));
-			clusterGroup->setVisible(true);
-			ccGroup->addChild(clusterGroup);
+			// we initiate the cluster cloud and mesh to add vertices and triangles of each voxel
+			ccPointCloud* clusterCloud = new ccPointCloud();
+			ccMesh* clusterMesh = new ccMesh(clusterCloud);
+			
 			for (int i = 0; i < indices.size(); i++)
 			{
+				// we create the voxel box mesh
 				CCVector3 V;
 				s_VoxFallParams.voxfall->getPoint(indices[i], V);
 				auto voxel = qVoxFallTransform::CreateVoxelMesh(V, s_VoxFallParams.voxelSize, indices[i]);
-				clusterGroup->addChild(voxel);
+				ccPointCloud* voxelCloud = dynamic_cast<ccPointCloud*>(voxel->getAssociatedCloud());
+				voxelCloud->applyGLTransformation_recursive(&transform.inverse);
+
+				// we append voxel vertices in the cluster cloud;
+				unsigned vertCount = clusterCloud->size();
+				clusterCloud->append(voxelCloud, clusterCloud->size());
+
+				// we add triangles from the voxel mesh to the cluster mesh
+				for (unsigned i = 0; i < voxel->size(); ++i)
+				{
+					auto tri = voxel->getTriangleVertIndexes(i);
+					clusterMesh->addTriangle(tri->i1+vertCount, tri->i2+vertCount, tri->i3+vertCount);
+				}
 
 				//progress bar
 				if (!nProgress.oneStep())
@@ -682,9 +696,11 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 					return false;
 				}
 			}
+			clusterMesh->setName(QString("Cluster#%1 - (v: %2 m3)").arg(label).arg(s_VoxFallParams.volumes[label - 1]));
+			clusterMesh->computePerVertexNormals();
+			ccGroup->addChild(clusterMesh);
 			indices.clear();
 		}
-		ccGroup->applyGLTransformation_recursive(&transform.inverse);
 		ccGroup->setVisible(true);
 		app->addToDB(ccGroup);
 
