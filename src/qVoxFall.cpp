@@ -20,6 +20,7 @@
 
 //Qt
 #include <QMainWindow>
+#include <QMessageBox>
 
 //local
 #include "qVoxFallDialog.h"
@@ -97,6 +98,23 @@ void qVoxFall::doAction()
 	{
 		//process cancelled by the user
 		return;
+	}
+
+	//if "generate report" is selected, check if the output filepath already exists
+	if (dlg.getGenerateReportActivation())
+	{
+		QString filename = dlg.destinationPathLineEdit->text();
+		QFile outFile(filename);
+		if (outFile.exists())
+		{
+			//if the file already exists, ask for confirmation!
+			if (QMessageBox::warning(m_app->getMainWindow(),
+				"Overwrite",
+				"[VoxFall] File already exists! Are you sure you want to overwrite it?",
+				QMessageBox::Yes,
+				QMessageBox::No) == QMessageBox::No)
+				return;
+		}
 	}
 
 	////display the voxel size in console

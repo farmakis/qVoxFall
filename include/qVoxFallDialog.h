@@ -45,6 +45,8 @@ public:
 	double getVoxelSize() const;
 	//! Returns slope azimuth
 	double getAzimuth() const;
+	//! Returns whether a report will be generated
+	bool getGenerateReportActivation() const;
 	//! Returns whether the blocks will be exported as meshes
 	bool getExportMeshesActivation() const;
 	//! Labels the blocks as loss or gain clusters
@@ -68,6 +70,9 @@ protected: //methods
 
 	//! Sets meshes
 	void setMeshes(ccMesh* mesh1, ccMesh* mesh2);
+
+	//! Called when the 'browse' tool button is pressed
+	void browseDestination();
 
 protected: //members
 

@@ -29,8 +29,8 @@ class ccMainAppInterface;
 
 //! VoxFall process
 /** See "VoxFall: Non-Parametric Volumetric Change Detection for Rockfalls",
-	Farmakis, I., Guccione, D.E., Thoeni, K. and Giacomini, A., 2024,
-	Computers and Geosciences
+	Farmakis, I., Guccione, D.E., Thoeni, K. and Giacomini, A., 2025,
+	Engineering Geology
 **/
 class qVoxFallProcess
 {

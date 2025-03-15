@@ -162,6 +162,26 @@
        </property>
 	   <layout class="QGridLayout" name="gridLayout_2">
 		<item row="0" column="0">	
+		 <widget class="QCheckBox" name="generateReportBox">
+		  <property name="text">
+		   <string>Generate report (CSV)</string>
+		  </property>
+		  <property name="checked">
+		   <bool>true</bool>
+		  </property>
+		 </widget>	
+		</item>
+		<item row="0" column="1">
+		 <widget class="QLineEdit" name="destinationPathLineEdit"/>
+		</item>
+		<item row="0" column="5">
+         <widget class="QToolButton" name="browseToolButton">
+          <property name="text">
+           <string notr="true">...</string>
+          </property>
+         </widget>
+		</item>
+		<item row="1" column="0">	
 		 <widget class="QCheckBox" name="exportCheckBox">
 		  <property name="text">
 		   <string>Export meshes</string>
@@ -171,7 +191,7 @@
 		  </property>
 		 </widget>	
 		</item>	   
-		<item row="1" column="0">	
+		<item row="2" column="0">	
 		 <widget class="QCheckBox" name="lossCheckBox">
 		  <property name="text">
 		   <string>Loss/gain</string>
@@ -210,6 +230,7 @@
   <tabstop>swapMeshesToolButton</tabstop>
   <tabstop>voxelSizeDoubleSpinBox</tabstop>
   <tabstop>azDoubleSpinBox</tabstop>
+  <tabstop>generateReportBox</tabstop>
   <tabstop>exportCheckBox</tabstop>
   <tabstop>lossCheckBox</tabstop>
   <tabstop>buttonBox</tabstop>

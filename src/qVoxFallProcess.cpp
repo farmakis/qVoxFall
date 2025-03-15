@@ -74,6 +74,7 @@ struct VoxFallParams
 	int clusterLabel = 0;
 	int currentLabel;
 	int changeType;
+	bool genarateReport = false;
 	bool exportBlocksAsMeshes = false;
 	bool exportLossGain = false;
 	CCVector3 minBound, maxBound, extent, steps;
@@ -93,6 +94,7 @@ struct VoxFallParams
 
 	//export
 	ccPointCloud* voxfall = nullptr;
+	QString groupName;
 
 	//scalar fields
 	ccScalarField* clusterSF = nullptr;			//cluster ID
@@ -420,9 +422,11 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 	s_VoxFallParams.maxBound = mesh->getOwnBB().maxCorner();
 	s_VoxFallParams.extent = s_VoxFallParams.maxBound - s_VoxFallParams.minBound;
 	s_VoxFallParams.steps = (s_VoxFallParams.extent / s_VoxFallParams.voxelSize) + Vector3Tpl<float>(1, 1, 1);
+	s_VoxFallParams.genarateReport = dlg.getGenerateReportActivation();
 	s_VoxFallParams.exportBlocksAsMeshes = dlg.getExportMeshesActivation();
 	s_VoxFallParams.exportLossGain = dlg.getLossGainActivation();
-	s_VoxFallParams.voxfall = new ccPointCloud(mesh1->getName() + "_to_" + mesh2->getName() + QString(" [VoxFall grid] (voxel %1 m)").arg(s_VoxFallParams.voxelSize));
+	s_VoxFallParams.groupName = mesh1->getName() + "_to_" + mesh2->getName() + QString(" [VoxFall clusters] (voxel %1 m)").arg(s_VoxFallParams.voxelSize);
+	s_VoxFallParams.voxfall = new ccPointCloud(s_VoxFallParams.groupName);
 
 	//Initialize voxel grid
 	auto voxelGrid = CCCoreLib::Grid3D<int>();
@@ -654,7 +658,7 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 		pDlg.start();
 
 		//we create a new group to store all output meshes as 'VoxFall clusters'
-		ccHObject* ccGroup = new ccHObject(mesh1->getName() + "_to_" + mesh2->getName() + QString(" [VoxFall clusters] (voxel %1 m)").arg(s_VoxFallParams.voxelSize));
+		ccHObject* ccGroup = new ccHObject(s_VoxFallParams.groupName);
 
 		for (int label = 1; label < s_VoxFallParams.clusterLabel; ++label)
 		{
@@ -759,7 +763,83 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 		s_VoxFallParams.voxfall->setEnabled(false);
 	}
 	app->addToDB(s_VoxFallParams.voxfall);
+	
+	//if "generate report" is selected, open CSV file
+	if (s_VoxFallParams.genarateReport)
+	{
 
+		QString filename = dlg.destinationPathLineEdit->text();
+		QFile outFile(filename);
+		//open CSV file
+		if (!outFile.open(QFile::WriteOnly | QFile::Text))
+		{
+			app->dispToConsole(QString("Failed to open file for writing! Check available space and access rights"), ccMainAppInterface::ERR_CONSOLE_MESSAGE);
+			return false;
+		}
+		//write header
+		QTextStream outStream(&outFile);
+		outStream << s_VoxFallParams.groupName << " \n\n";
+		outStream << "Cluster ID,";
+		outStream << " Center X,";
+		outStream << " Center Y,";
+		outStream << " Center Z,";
+		outStream << " Extent X,";
+		outStream << " Extent Y,";
+		outStream << " Extent Z,";
+		outStream << " Change type,";
+		outStream << " Volume (m3),";
+		outStream << " Uncertainty (m3),";
+		outStream << " \n";
+
+		//add info line for each cluster
+		for (int label = 1; label < s_VoxFallParams.clusterLabel; ++label)
+		{
+			//get data from cluster cloud
+			ccPointCloud* cluster = s_VoxFallParams.voxfall->filterPointsByScalarValue(static_cast<ScalarType>(label), static_cast<ScalarType>(label));
+			ccBBox bb = cluster->getOwnBB();
+			CCVector3 centroid = bb.getCenter();
+			CCVector3d extent = bb.maxCorner() - bb.minCorner();
+			sfIdx = cluster->getScalarFieldIndexByName(VOLUME_SF_NAME);
+			cluster->setCurrentDisplayedScalarField(sfIdx);;
+			auto volume = cluster->getPointScalarValue(static_cast<unsigned int>(0));
+			sfIdx = cluster->getScalarFieldIndexByName(UNCERTAINTY_SF_NAME);
+			cluster->setCurrentDisplayedScalarField(sfIdx);;
+			auto uncertainty = cluster->getPointScalarValue(static_cast<unsigned int>(0));
+			auto loss_gain = "n/a";
+			if (s_VoxFallParams.exportLossGain)
+			{
+				sfIdx = cluster->getScalarFieldIndexByName(CHANGE_TYPE_SF_NAME);
+				cluster->setCurrentDisplayedScalarField(sfIdx);;
+				auto changeType = cluster->getPointScalarValue(static_cast<unsigned int>(0));
+
+				if (s_VoxFallParams.changeType == -1)
+				{
+					loss_gain = "loss";
+				}
+				else
+				{
+					loss_gain = "gain";
+				}
+			}
+			
+			//add data to file
+			outStream << label << ","; //cluster ID
+			outStream << centroid.x << "," << centroid.y << "," << centroid.z << ","; //center XYZ
+			if (extent.x > 0) { outStream << extent.x << ","; } else { outStream << s_VoxFallParams.voxelSize << ","; }; //extent X
+			if (extent.y > 0) { outStream << extent.y << ","; } else { outStream << s_VoxFallParams.voxelSize << ","; }; //extent Y
+			if (extent.z > 0) { outStream << extent.z << ","; } else { outStream << s_VoxFallParams.voxelSize << ","; }; //extent Z
+			outStream << loss_gain << ","; //change type (loss/gain)
+			outStream << volume << ","; //volume
+			outStream << uncertainty << ","; //uncertainty
+			outStream << " \n";
+		}
+
+		outFile.close();
+		if (app)
+			app->dispToConsole(QString("[VoxFall] Report generated at: " + dlg.destinationPathLineEdit->text()),
+				ccMainAppInterface::STD_CONSOLE_MESSAGE);
+	}
+	
 	if (app)
 		app->refreshAll();
 

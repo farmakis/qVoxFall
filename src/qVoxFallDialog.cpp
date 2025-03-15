@@ -23,10 +23,12 @@
 
 //qCC_db
 #include <ccMesh.h>
+#include <ccFileUtils.h>
 
 //Qt
 #include <QMainWindow>
 #include <QComboBox>
+#include <QFileDialog>
 
 
 /*** HELPERS ***/
@@ -88,6 +90,8 @@ qVoxFallDialog::qVoxFallDialog(ccMesh* mesh1, ccMesh* mesh2, ccMainAppInterface*
 	connect(showMesh2CheckBox,		&QAbstractButton::toggled,	this, &qVoxFallDialog::setMesh2Visibility);
 
 	connect(swapMeshesToolButton,	&QAbstractButton::clicked,	this, &qVoxFallDialog::swapMeshes);
+
+	connect(browseToolButton, &QAbstractButton::clicked, this, &qVoxFallDialog::browseDestination);
 
 	setMeshes(mesh1, mesh2);
 
@@ -163,6 +167,25 @@ double qVoxFallDialog::getAzimuth() const
 	return azimuth;
 }
 
+bool qVoxFallDialog::getGenerateReportActivation() const
+{
+	return generateReportBox->isChecked();
+}
+
+void qVoxFallDialog::browseDestination()
+{
+	QString fileType;
+	fileType = "ASCII table (*.csv)";
+
+	//open file saving dialog
+	QString outputFilename = QFileDialog::getSaveFileName(nullptr, "Select destination", destinationPathLineEdit->text(), fileType);
+
+	if (outputFilename.isEmpty())
+		return;
+
+	destinationPathLineEdit->setText(outputFilename);
+}
+
 bool qVoxFallDialog::getExportMeshesActivation() const
 {
 	return exportCheckBox->isChecked();
@@ -189,12 +212,21 @@ void qVoxFallDialog::loadParamsFrom(const QSettings& settings)
 	//read parameters
 	double voxelSize = settings.value("VoxelSize", voxelSizeDoubleSpinBox->value()).toDouble();
 	double azimuth = settings.value("Azimuth", azDoubleSpinBox->value()).toDouble();
+	bool generateReportEnabled = settings.value("GenerateReportEnabled", generateReportBox->isChecked()).toBool();
+	QString reportPath = settings.value("ReportPath", ccFileUtils::defaultDocPath()).toString();
+	//for the first time it is launched
+	if (!reportPath.endsWith(".csv"))
+	{
+		reportPath = QFileInfo(reportPath).absolutePath() + QString("/VoxFall-report.csv");
+	}
 	bool exportMeshesEnabled = settings.value("ExportMeshesEnabled", exportCheckBox->isChecked()).toBool();
 	bool lossGainEnabled = settings.value("LossGainEnabled", lossCheckBox->isChecked()).toBool();
 
 	//apply parameters
 	voxelSizeDoubleSpinBox->setValue(voxelSize);
 	azDoubleSpinBox->setValue(azimuth);
+	generateReportBox->setChecked(generateReportEnabled);
+	destinationPathLineEdit->setText(reportPath);
 	exportCheckBox->setChecked(exportMeshesEnabled);
 	lossCheckBox->setChecked(lossGainEnabled);
 }
@@ -210,6 +242,8 @@ void qVoxFallDialog::saveParamsTo(QSettings& settings)
 	//save parameters
 	settings.setValue("VoxelSize", voxelSizeDoubleSpinBox->value());
 	settings.setValue("Azimuth", azDoubleSpinBox->value());
+	settings.setValue("GenerateReportEnabled", generateReportBox->isChecked());
+	settings.setValue("ReportPath", destinationPathLineEdit->text());
 	settings.setValue("ExportMeshesEnabled", exportCheckBox->isChecked());
 	settings.setValue("LossGainEnabled", lossCheckBox->isChecked());
 }
