@@ -567,7 +567,7 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 	s_VoxFallParams.nProgress = &nProgress;
 
 
-	s_VoxFallParams.volumes.reserve(s_VoxFallParams.clusterLabel);
+	s_VoxFallParams.volumes.resize(s_VoxFallParams.clusterLabel);
 	s_VoxFallParams.nonEmptyVoxelsVisited.resize(voxelGrid.innerCellCount(), false);
 	for (int label = 1; label < s_VoxFallParams.clusterLabel; ++label)
 	{
@@ -660,8 +660,21 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 		//we create a new group to store all output meshes as 'VoxFall clusters'
 		ccHObject* ccGroup = new ccHObject(s_VoxFallParams.groupName);
 
-		for (int label = 1; label < s_VoxFallParams.clusterLabel; ++label)
+		//we pair volumes with the labels vector and sort them by volume
+		std::vector<std::pair<float, int>> pairVolumeLabel(s_VoxFallParams.volumes.size());
+		for (int i = 0; i < s_VoxFallParams.volumes.size(); i++)
 		{
+			pairVolumeLabel[i] = { s_VoxFallParams.volumes[i], i + 1};
+		}
+		std::sort(pairVolumeLabel.begin(), pairVolumeLabel.end(), [](const std::pair<float, int>& a, const std::pair<float, int>& b) {
+			return a.first > b.first;  // Compare by the first element (int) in descending order
+		});
+
+		for (int k = 1; k < s_VoxFallParams.clusterLabel; k++)
+		{
+			auto volume = pairVolumeLabel[k - 1].first;
+			auto label = pairVolumeLabel[k - 1].second;
+
 			std::vector<unsigned int> indices;
 			auto it = std::find(s_VoxFallParams.clusters.begin(), s_VoxFallParams.clusters.end(), label);
 			while (it != s_VoxFallParams.clusters.end())
@@ -700,7 +713,7 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 					return false;
 				}
 			}
-			clusterMesh->setName(QString("Cluster#%1 - (v: %2 m3)").arg(label).arg(s_VoxFallParams.volumes[label - 1]));
+			clusterMesh->setName(QString("Cluster#%1 - (v: %2 m3)").arg(label).arg(volume));
 			clusterMesh->computePerVertexNormals();
 			ccGroup->addChild(clusterMesh);
 			indices.clear();
