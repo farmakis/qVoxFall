@@ -152,6 +152,13 @@
 		  </property>
 		 </widget>
 		</item>
+		<item row="1" column="5">
+		 <widget class="QToolButton" name="autoAzimuthButton">
+		  <property name="text">
+		   <string notr="true">Auto</string>
+		  </property>
+		 </widget>
+		</item>
        </layout>
       </widget>
      </item>
@@ -230,6 +237,7 @@
   <tabstop>swapMeshesToolButton</tabstop>
   <tabstop>voxelSizeDoubleSpinBox</tabstop>
   <tabstop>azDoubleSpinBox</tabstop>
+  <tabstop>autoAzimuthButton</tabstop>
   <tabstop>generateReportBox</tabstop>
   <tabstop>exportCheckBox</tabstop>
   <tabstop>lossCheckBox</tabstop>

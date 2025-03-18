@@ -66,6 +66,9 @@ protected:
 	void setMesh1Visibility(bool);
 	void setMesh2Visibility(bool);
 
+	//! Automatically estimate the azimuth
+	void autoComputeAzimuth();
+
 protected: //methods
 
 	//! Sets meshes

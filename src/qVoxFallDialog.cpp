@@ -23,12 +23,19 @@
 
 //qCC_db
 #include <ccMesh.h>
+#include <ccPlane.h>
 #include <ccFileUtils.h>
 
 //Qt
 #include <QMainWindow>
 #include <QComboBox>
 #include <QFileDialog>
+
+//other
+#include <ccNormalVectors.h>
+#include <Neighbourhood.h>
+
+#define RAD2DEG (180.0 / M_PI)
 
 
 /*** HELPERS ***/
@@ -92,6 +99,8 @@ qVoxFallDialog::qVoxFallDialog(ccMesh* mesh1, ccMesh* mesh2, ccMainAppInterface*
 	connect(swapMeshesToolButton,	&QAbstractButton::clicked,	this, &qVoxFallDialog::swapMeshes);
 
 	connect(browseToolButton, &QAbstractButton::clicked, this, &qVoxFallDialog::browseDestination);
+
+	connect(autoAzimuthButton, &QAbstractButton::clicked, this, &qVoxFallDialog::autoComputeAzimuth);
 
 	setMeshes(mesh1, mesh2);
 
@@ -246,4 +255,103 @@ void qVoxFallDialog::saveParamsTo(QSettings& settings)
 	settings.setValue("ReportPath", destinationPathLineEdit->text());
 	settings.setValue("ExportMeshesEnabled", exportCheckBox->isChecked());
 	settings.setValue("LossGainEnabled", lossCheckBox->isChecked());
+}
+
+void qVoxFallDialog::autoComputeAzimuth()
+{
+
+	//check if there is an already fitted plane and get the dip direction
+	for (unsigned i = 0; i < m_mesh1->getChildrenNumber(); ++i)
+	{
+		ccHObject* child = m_mesh1->getChild(i);
+		if (child && child->isA(CC_TYPES::PLANE))
+		{
+			ccPlane* plane = static_cast<ccPlane*>(child);
+			CCVector3 N = plane->getNormal();
+
+			//we compute strike & dip by the way
+			PointCoordinateType dip = 0.0f;
+			PointCoordinateType dipDir = 0.0f;
+			ccNormalVectors::ConvertNormalToDipAndDipDir(N, dip, dipDir);
+			QString dipAndDipDirStr = ccNormalVectors::ConvertDipAndDipDirToString(dip, dipDir);
+			m_app->dispToConsole("[VoxFall] Azimuth estimation: From existing plane");
+			m_app->dispToConsole(QString("\t- %1").arg(dipAndDipDirStr));
+			azDoubleSpinBox->setValue(dipDir);
+			return;
+		}
+	}
+
+	ccShiftedObject* shifted = nullptr;
+	CCCoreLib::GenericIndexedCloudPersist* cloud = nullptr;
+
+	ccGenericPointCloud* gencloud = ccHObjectCaster::ToGenericPointCloud(m_mesh1);
+	if (gencloud)
+	{
+		cloud = static_cast<CCCoreLib::GenericIndexedCloudPersist*>(gencloud);
+		shifted = gencloud;
+	}
+
+	if (cloud)
+	{
+		double rms = 0.0;
+		CCVector3 C;
+		CCVector3 N;
+		ccHObject* plane = nullptr;
+
+		ccPlane* pPlane = ccPlane::Fit(cloud, &rms);
+		if (pPlane)
+		{
+			plane = static_cast<ccHObject*>(pPlane);
+			N = pPlane->getNormal();
+			C = *CCCoreLib::Neighbourhood(cloud).getGravityCenter();
+			pPlane->enableStippling(true);
+
+			if (shifted)
+			{
+				pPlane->copyGlobalShiftAndScale(*shifted);
+			}
+		}
+
+		if (plane)
+		{
+			m_app->dispToConsole(tr("[VoxFall] Azimuth estimation: Entity '%1'").arg(m_mesh1->getName()));
+			m_app->dispToConsole(tr("\t- plane fitting RMS: %1").arg(rms));
+
+			//We always consider the normal with a positive 'Z' by default!
+			if (N.z < 0.0)
+				N *= -1.0;
+			m_app->dispToConsole(tr("\t- normal: (%1, %2, %3)").arg(N.x).arg(N.y).arg(N.z));
+
+			//we compute strike & dip by the way
+			PointCoordinateType dip = 0.0f;
+			PointCoordinateType dipDir = 0.0f;
+			ccNormalVectors::ConvertNormalToDipAndDipDir(N, dip, dipDir);
+			QString dipAndDipDirStr = ccNormalVectors::ConvertDipAndDipDirToString(dip, dipDir);
+			m_app->dispToConsole(QString("\t- %1").arg(dipAndDipDirStr));
+			azDoubleSpinBox->setValue(dipDir);
+
+			//hack: output the transformation matrix that would make this normal points towards +Z
+			ccGLMatrix makeZPosMatrix = ccGLMatrix::FromToRotation(N, CCVector3(0, 0, CCCoreLib::PC_ONE));
+			CCVector3 Gt = C;
+			makeZPosMatrix.applyRotation(Gt);
+			makeZPosMatrix.setTranslation(C - Gt);
+			
+			plane->setName(dipAndDipDirStr);
+			plane->applyGLTransformation_recursive(); //not yet in DB
+			plane->setVisible(true);
+			plane->setSelectionBehavior(ccHObject::SELECTION_FIT_BBOX);
+
+			m_mesh1->addChild(plane);
+			plane->setDisplay(m_mesh1->getDisplay());
+			plane->prepareDisplayForRefresh_recursive();
+			m_app->addToDB(plane);
+		}
+		else
+		{
+			m_app->dispToConsole(tr("Failed to fit a plane/facet on entity '%1'").arg(m_mesh1->getName()));
+		}
+	}
+	
+	m_app->refreshAll();
+	m_app->updateUI();
 }
