@@ -39,6 +39,10 @@
 
 float qVoxFallTransform::GetRotationAngle(double azimuth)
 {
+	if (azimuth > 180)
+	{
+		azimuth = azimuth - 180;
+	}
 	double azimuthRadians = azimuth * 3.14159 / 180;
 
 	std::vector<double> direction = { sin(azimuthRadians), cos(azimuthRadians) };
