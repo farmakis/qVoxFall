@@ -36,33 +36,6 @@
 #include <QtConcurrentMap>
 
 
-
-float qVoxFallTransform::GetRotationAngle(double azimuth)
-{
-	if (azimuth > 180)
-	{
-		azimuth = azimuth - 180;
-	}
-	double azimuthRadians = azimuth * 3.14159 / 180;
-
-	std::vector<double> direction = { sin(azimuthRadians), cos(azimuthRadians) };
-	std::vector<double> xyView = { 0, 1 };
-
-	// compute dot product of unit vectors
-	double dotProduct = 0;
-	for (int i = 0; i < direction.size(); i++)
-	{
-		direction[i] = direction[i] / sqrt(direction[0] * direction[0] + direction[1] * direction[1]);
-		xyView[i] = xyView[i] / sqrt(xyView[0] * xyView[0] + xyView[1] * xyView[1]);
-		dotProduct += direction[i] * xyView[i];
-	}
-
-	float zRot = acos(std::max(-1.0, std::min(dotProduct, 1.0)));
-
-	return zRot;
-}
-
-
 ccBox* qVoxFallTransform::CreateVoxelMesh(CCVector3 V, float voxelSize, int voxelIdx)
 {
 	CCVector3 dims = { voxelSize, voxelSize, voxelSize };

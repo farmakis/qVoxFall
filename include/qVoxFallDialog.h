@@ -43,6 +43,8 @@ public:
 
 	//! Returns voxel size
 	double getVoxelSize() const;
+	//! Returns slope dip
+	double getDip() const;
 	//! Returns slope azimuth
 	double getAzimuth() const;
 	//! Returns whether a report will be generated
@@ -66,8 +68,8 @@ protected:
 	void setMesh1Visibility(bool);
 	void setMesh2Visibility(bool);
 
-	//! Automatically estimate the azimuth
-	void autoComputeAzimuth();
+	//! Automatically estimate the dip angle
+	void autoFitPlane();
 
 protected: //methods
 

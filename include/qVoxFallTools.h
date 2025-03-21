@@ -37,35 +37,34 @@
 
 class qVoxFallTransform
 {
-	double az;
-	float zRot;
-
 public:
 	ccGLMatrix matrix;
 	ccGLMatrix inverse;
-	qVoxFallTransform(double azimuth)
+
+	qVoxFallTransform(double dip, double azimuth)
 	{
-		az = azimuth;
-		zRot = GetRotationAngle(azimuth);
+		float zRot = azimuth * 3.14159 / 180;
+		float xRot = (90 - dip) * 3.14159 / 180;
 
-		const Vector3Tpl<float> X(std::cos(zRot), std::sin(zRot), 0);
-		const Vector3Tpl<float> Y(-std::sin(zRot), std::cos(zRot), 0);
-		const Vector3Tpl<float> Z(0, 0, 1);
-		const Vector3Tpl<float> Tr(0, 0, 0);
-		matrix = ccGLMatrix(X, Y, Z, Tr);
+		ccGLMatrix zRotMatrix;
+		const Vector3Tpl<float> zX(std::cos(zRot), std::sin(zRot), 0);
+		const Vector3Tpl<float> zY(-std::sin(zRot), std::cos(zRot), 0);
+		const Vector3Tpl<float> zZ(0, 0, 1);
+		const Vector3Tpl<float> zTr(0, 0, 0);
+		zRotMatrix = ccGLMatrix(zX, zY, zZ, zTr);
 
-		const Vector3Tpl<float> rX(std::cos(-zRot), std::sin(-zRot), 0);
-		const Vector3Tpl<float> rY(-std::sin(-zRot), std::cos(-zRot), 0);
-		const Vector3Tpl<float> rZ(0, 0, 1);
-		const Vector3Tpl<float> rTr(0, 0, 0);
-		inverse = ccGLMatrix(rX, rY, rZ, rTr);
+		ccGLMatrix xRotMatrix;
+		const Vector3Tpl<float> xX(1, 0, 0);
+		const Vector3Tpl<float> xY(0, std::cos(xRot), -std::sin(xRot));
+		const Vector3Tpl<float> xZ(0, std::sin(xRot), std::cos(xRot));
+		const Vector3Tpl<float> xTr(0, 0, 0);
+		xRotMatrix = ccGLMatrix(xX, xY, xZ, xTr);
+
+		matrix = zRotMatrix * xRotMatrix;
+		inverse = matrix.inverse();
 	}
 
 	static ccBox* CreateVoxelMesh(CCVector3 V, float voxelSize, int voxelIdx);
-
-private:
-	static float GetRotationAngle(double azimuth);
-
 };
 
 

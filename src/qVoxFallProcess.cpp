@@ -390,6 +390,7 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 	}
 
 	//get parameters from dialog
+	double dip = dlg.getDip();
 	double azimuth = dlg.getAzimuth();
 
 	//max thread count
@@ -409,7 +410,7 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 	auto mesh = mesh1->cloneMesh();
 	mesh->merge(mesh2, false);
 
-	auto transform = qVoxFallTransform(azimuth);
+	auto transform = qVoxFallTransform(dip, azimuth);
 	mesh->applyGLTransformation_recursive(&transform.matrix);
 	mesh1->applyGLTransformation_recursive(&transform.matrix);
 

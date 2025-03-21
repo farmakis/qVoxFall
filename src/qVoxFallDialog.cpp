@@ -100,7 +100,7 @@ qVoxFallDialog::qVoxFallDialog(ccMesh* mesh1, ccMesh* mesh2, ccMainAppInterface*
 
 	connect(browseToolButton, &QAbstractButton::clicked, this, &qVoxFallDialog::browseDestination);
 
-	connect(autoAzimuthButton, &QAbstractButton::clicked, this, &qVoxFallDialog::autoComputeAzimuth);
+	connect(autoFitPlaneButton, &QAbstractButton::clicked, this, &qVoxFallDialog::autoFitPlane);
 
 	setMeshes(mesh1, mesh2);
 
@@ -168,6 +168,12 @@ double qVoxFallDialog::getVoxelSize() const
 {
 	double voxelSize = voxelSizeDoubleSpinBox->value();
 	return voxelSize;
+}
+
+double qVoxFallDialog::getDip() const
+{
+	double dip = dipDoubleSpinBox->value();
+	return dip;
 }
 
 double qVoxFallDialog::getAzimuth() const
@@ -257,7 +263,7 @@ void qVoxFallDialog::saveParamsTo(QSettings& settings)
 	settings.setValue("LossGainEnabled", lossCheckBox->isChecked());
 }
 
-void qVoxFallDialog::autoComputeAzimuth()
+void qVoxFallDialog::autoFitPlane()
 {
 
 	//check if there is an already fitted plane and get the dip direction
@@ -274,8 +280,9 @@ void qVoxFallDialog::autoComputeAzimuth()
 			PointCoordinateType dipDir = 0.0f;
 			ccNormalVectors::ConvertNormalToDipAndDipDir(N, dip, dipDir);
 			QString dipAndDipDirStr = ccNormalVectors::ConvertDipAndDipDirToString(dip, dipDir);
-			m_app->dispToConsole("[VoxFall] Azimuth estimation: From existing plane");
+			m_app->dispToConsole("[VoxFall] Orientation: From existing plane");
 			m_app->dispToConsole(QString("\t- %1").arg(dipAndDipDirStr));
+			dipDoubleSpinBox->setValue(dip);
 			azDoubleSpinBox->setValue(dipDir);
 			return;
 		}
@@ -314,7 +321,7 @@ void qVoxFallDialog::autoComputeAzimuth()
 
 		if (plane)
 		{
-			m_app->dispToConsole(tr("[VoxFall] Azimuth estimation: Entity '%1'").arg(m_mesh1->getName()));
+			m_app->dispToConsole(tr("[VoxFall] Orientation: Fit plane to '%1'").arg(m_mesh1->getName()));
 			m_app->dispToConsole(tr("\t- plane fitting RMS: %1").arg(rms));
 
 			//We always consider the normal with a positive 'Z' by default!
@@ -328,6 +335,7 @@ void qVoxFallDialog::autoComputeAzimuth()
 			ccNormalVectors::ConvertNormalToDipAndDipDir(N, dip, dipDir);
 			QString dipAndDipDirStr = ccNormalVectors::ConvertDipAndDipDirToString(dip, dipDir);
 			m_app->dispToConsole(QString("\t- %1").arg(dipAndDipDirStr));
+			dipDoubleSpinBox->setValue(dip);
 			azDoubleSpinBox->setValue(dipDir);
 
 			//hack: output the transformation matrix that would make this normal points towards +Z
