@@ -4,7 +4,7 @@
 //#                                                                        #
 //#  This program is free software; you can redistribute it and/or modify  #
 //#  it under the terms of the GNU General Public License as published by  #
-//#  the Free Software Foundation; version 2 of the License.               #
+//#  the Free Software Foundation; version 3 of the License.               #
 //#                                                                        #
 //#  This program is distributed in the hope that it will be useful,       #
 //#  but WITHOUT ANY WARRANTY; without even the implied warranty of        #
@@ -25,6 +25,7 @@
 //local
 #include "qVoxFallDialog.h"
 #include "qVoxFallDisclaimerDialog.h"
+#include "qVoxFallCommands.h"
 #include "qVoxFallProcess.h"
 
 //qCC_db
@@ -136,4 +137,14 @@ void qVoxFall::doAction()
 
 	//'Compute' may change some parameters of the dialog
 	dlg.saveParamsToPersistentSettings();
+}
+
+void qVoxFall::registerCommands(ccCommandLineInterface* cmd)
+{
+	if (!cmd)
+	{
+		assert(false);
+		return;
+	}
+	cmd->registerCommand(ccCommandLineInterface::Command::Shared(new CommandVoxFall));
 }

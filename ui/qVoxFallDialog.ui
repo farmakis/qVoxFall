@@ -113,7 +113,7 @@
         <item row="1" column="1">
          <widget class="QDoubleSpinBox" name="dipDoubleSpinBox">
           <property name="decimals">
-           <number>0</number>
+           <number>90</number>
           </property>
           <property name="minimum">
            <double>0.0</double>
