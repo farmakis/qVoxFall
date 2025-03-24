@@ -25,7 +25,6 @@
 //local
 #include "qVoxFallDialog.h"
 #include "qVoxFallDisclaimerDialog.h"
-#include "qVoxFallCommands.h"
 #include "qVoxFallProcess.h"
 
 //qCC_db
@@ -137,14 +136,4 @@ void qVoxFall::doAction()
 
 	//'Compute' may change some parameters of the dialog
 	dlg.saveParamsToPersistentSettings();
-}
-
-void qVoxFall::registerCommands(ccCommandLineInterface* cmd)
-{
-	if (!cmd)
-	{
-		assert(false);
-		return;
-	}
-	cmd->registerCommand(ccCommandLineInterface::Command::Shared(new CommandVoxFall));
 }
