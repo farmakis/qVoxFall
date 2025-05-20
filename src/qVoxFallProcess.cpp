@@ -685,7 +685,7 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 			}
 
 			// we initiate the cluster cloud and mesh to add vertices and triangles of each voxel
-			ccPointCloud* clusterCloud = new ccPointCloud();
+			ccPointCloud* clusterCloud = new ccPointCloud("Vertices");
 			ccMesh* clusterMesh = new ccMesh(clusterCloud);
 			
 			for (int i = 0; i < indices.size(); i++)
@@ -716,6 +716,8 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 			}
 			clusterMesh->setName(QString("Cluster#%1 - (v: %2 m3)").arg(label).arg(volume));
 			clusterMesh->computePerVertexNormals();
+			clusterCloud->resize(clusterCloud->size());
+			clusterMesh->addChild(clusterCloud);
 			ccGroup->addChild(clusterMesh);
 			indices.clear();
 		}
