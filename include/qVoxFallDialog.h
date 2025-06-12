@@ -34,12 +34,10 @@ class qVoxFallDialog : public QDialog, public Ui::VoxFallDialog
 public:
 
 	//! Default constructor
-	qVoxFallDialog(ccMesh* mesh1, ccMesh* mesh2, ccMainAppInterface* app);
+	qVoxFallDialog(ccMesh* mesh, ccMainAppInterface* app);
 
-	//! Returns mesh #1
-	ccMesh* getMesh1() const { return m_mesh1; }
-	//! Returns mesh #2
-	ccMesh* getMesh2() const { return m_mesh2; }
+	//! Returns input mesh
+	ccMesh* getMesh() const { return m_mesh; }
 
 	//! Returns voxel size
 	double getVoxelSize() const;
@@ -50,7 +48,7 @@ public:
 	//! Returns whether a report will be generated
 	bool getGenerateReportActivation() const;
 	//! Returns whether the blocks will be exported as meshes
-	bool getExportMeshesActivation() const;
+	bool getExportMeshActivation() const;
 	//! Labels the blocks as loss or gain clusters
 	bool getLossGainActivation() const;
 
@@ -64,9 +62,7 @@ public:
 
 protected:
 
-	void swapMeshes();
-	void setMesh1Visibility(bool);
-	void setMesh2Visibility(bool);
+	void setMeshVisibility(bool);
 
 	//! Automatically estimate the dip angle
 	void autoFitPlane();
@@ -74,7 +70,7 @@ protected:
 protected: //methods
 
 	//! Sets meshes
-	void setMeshes(ccMesh* mesh1, ccMesh* mesh2);
+	void setMesh(ccMesh* mesh);
 
 	//! Called when the 'browse' tool button is pressed
 	void browseDestination();
@@ -83,8 +79,7 @@ protected: //members
 
 	ccMainAppInterface* m_app;
 
-	ccMesh* m_mesh1;
-	ccMesh* m_mesh2;
+	ccMesh* m_mesh;
 };
 
 #endif //Q_VOXFALL_DIALOG_HEADER

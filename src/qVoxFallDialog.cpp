@@ -84,78 +84,42 @@ static ccMesh* GetMeshFromCombo(QComboBox* comboBox, ccHObject* dbRoot)
 
 /*** HELPERS (END) ***/
 
-qVoxFallDialog::qVoxFallDialog(ccMesh* mesh1, ccMesh* mesh2, ccMainAppInterface* app)
+qVoxFallDialog::qVoxFallDialog(ccMesh* mesh, ccMainAppInterface* app)
 	: QDialog(app ? app->getMainWindow() : nullptr)
 	, Ui::VoxFallDialog()
 	, m_app(app)
-	, m_mesh1(nullptr)
-	, m_mesh2(nullptr)
+	, m_mesh(nullptr)
 {
 	setupUi(this);
 
-	connect(showMesh1CheckBox,		&QAbstractButton::toggled,	this, &qVoxFallDialog::setMesh1Visibility);
-	connect(showMesh2CheckBox,		&QAbstractButton::toggled,	this, &qVoxFallDialog::setMesh2Visibility);
-
-	connect(swapMeshesToolButton,	&QAbstractButton::clicked,	this, &qVoxFallDialog::swapMeshes);
+	connect(showMeshCheckBox, &QAbstractButton::toggled, this, &qVoxFallDialog::setMeshVisibility);
 
 	connect(browseToolButton, &QAbstractButton::clicked, this, &qVoxFallDialog::browseDestination);
 
 	connect(autoFitPlaneButton, &QAbstractButton::clicked, this, &qVoxFallDialog::autoFitPlane);
 
-	setMeshes(mesh1, mesh2);
+	setMesh(mesh);
 
 	loadParamsFromPersistentSettings();
 }
 
-void qVoxFallDialog::swapMeshes()
+void qVoxFallDialog::setMesh(ccMesh* mesh)
 {
-	setMeshes(m_mesh2, m_mesh1);
+	m_mesh = mesh;
+
+	//input mesh
+	meshLineEdit->setText(GetEntityName(mesh));
+	showMeshCheckBox->blockSignals(true);
+	showMeshCheckBox->setChecked(mesh->isVisible());
+	showMeshCheckBox->blockSignals(false);
 }
 
-void qVoxFallDialog::setMeshes(ccMesh* mesh1, ccMesh* mesh2)
+void qVoxFallDialog::setMeshVisibility(bool state)
 {
-	if (!mesh1 || !mesh2)
+	if (m_mesh)
 	{
-		assert(false);
-		return;
-	}
-
-	m_mesh1 = mesh1;
-	m_mesh2 = mesh2;
-
-	//mesh #1
-	mesh1LineEdit->setText(GetEntityName(mesh1));
-	showMesh1CheckBox->blockSignals(true);
-	showMesh1CheckBox->setChecked(mesh1->isVisible());
-	showMesh1CheckBox->blockSignals(false);
-
-	//mesh #2
-	mesh2LineEdit->setText(GetEntityName(mesh2));
-	showMesh2CheckBox->blockSignals(true);
-	showMesh2CheckBox->setChecked(mesh2->isVisible());
-	showMesh2CheckBox->blockSignals(false);
-}
-
-void qVoxFallDialog::setMesh1Visibility(bool state)
-{
-	if (m_mesh1)
-	{
-		m_mesh1->setVisible(state);
-		m_mesh1->prepareDisplayForRefresh();
-	}
-	if (m_app)
-	{
-		m_app->refreshAll();
-		m_app->updateUI();
-	}
-}
-
-void qVoxFallDialog::setMesh2Visibility(bool state)
-{
-	if (m_mesh2)
-	{
-		m_mesh2->setVisible(state);
-		m_mesh2->prepareDisplayForRefresh();
+		m_mesh->setVisible(state);
+		m_mesh->prepareDisplayForRefresh();
 	}
 	if (m_app)
 	{
@@ -201,7 +165,7 @@ void qVoxFallDialog::browseDestination()
 	destinationPathLineEdit->setText(outputFilename);
 }
 
-bool qVoxFallDialog::getExportMeshesActivation() const
+bool qVoxFallDialog::getExportMeshActivation() const
 {
 	return exportCheckBox->isChecked();
 }
@@ -267,9 +231,9 @@ void qVoxFallDialog::autoFitPlane()
 {
 
 	//check if there is an already fitted plane and get the dip direction
-	for (unsigned i = 0; i < m_mesh1->getChildrenNumber(); ++i)
+	for (unsigned i = 0; i < m_mesh->getChildrenNumber(); ++i)
 	{
-		ccHObject* child = m_mesh1->getChild(i);
+		ccHObject* child = m_mesh->getChild(i);
 		if (child && child->isA(CC_TYPES::PLANE))
 		{
 			ccPlane* plane = static_cast<ccPlane*>(child);
@@ -291,7 +255,7 @@ void qVoxFallDialog::autoFitPlane()
 	ccShiftedObject* shifted = nullptr;
 	CCCoreLib::GenericIndexedCloudPersist* cloud = nullptr;
 
-	ccGenericPointCloud* gencloud = ccHObjectCaster::ToGenericPointCloud(m_mesh1);
+	ccGenericPointCloud* gencloud = ccHObjectCaster::ToGenericPointCloud(m_mesh);
 	if (gencloud)
 	{
 		cloud = static_cast<CCCoreLib::GenericIndexedCloudPersist*>(gencloud);
@@ -321,7 +285,7 @@ void qVoxFallDialog::autoFitPlane()
 
 		if (plane)
 		{
-			m_app->dispToConsole(tr("[VoxFall] Orientation: Fit plane to '%1'").arg(m_mesh1->getName()));
+			m_app->dispToConsole(tr("[VoxFall] Orientation: Fit plane to '%1'").arg(m_mesh->getName()));
 			m_app->dispToConsole(tr("\t- plane fitting RMS: %1").arg(rms));
 
 			//We always consider the normal with a positive 'Z' by default!
@@ -349,14 +313,14 @@ void qVoxFallDialog::autoFitPlane()
 			plane->setVisible(true);
 			plane->setSelectionBehavior(ccHObject::SELECTION_FIT_BBOX);
 
-			m_mesh1->addChild(plane);
-			plane->setDisplay(m_mesh1->getDisplay());
+			m_mesh->addChild(plane);
+			plane->setDisplay(m_mesh->getDisplay());
 			plane->prepareDisplayForRefresh_recursive();
 			m_app->addToDB(plane);
 		}
 		else
 		{
-			m_app->dispToConsole(tr("Failed to fit a plane/facet on entity '%1'").arg(m_mesh1->getName()));
+			m_app->dispToConsole(tr("Failed to fit a plane/facet on entity '%1'").arg(m_mesh->getName()));
 		}
 	}
 	

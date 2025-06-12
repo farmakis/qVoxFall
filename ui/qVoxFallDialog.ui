@@ -23,9 +23,9 @@
      <item>
       <layout class="QFormLayout" name="formLayout_3">
        <item row="0" column="0">
-        <widget class="QCheckBox" name="showMesh1CheckBox">
+        <widget class="QCheckBox" name="showMeshCheckBox">
          <property name="text">
-          <string>Mesh #1</string>
+          <string>Input Mesh</string>
          </property>
          <property name="checked">
           <bool>true</bool>
@@ -33,30 +33,9 @@
         </widget>
        </item>
        <item row="0" column="1">
-        <widget class="QLineEdit" name="mesh1LineEdit"/>
-       </item>
-       <item row="1" column="0">
-        <widget class="QCheckBox" name="showMesh2CheckBox">
-         <property name="text">
-          <string>Mesh #2</string>
-         </property>
-         <property name="checked">
-          <bool>true</bool>
-         </property>
-        </widget>
-       </item>
-       <item row="1" column="1">
-        <widget class="QLineEdit" name="mesh2LineEdit"/>
+        <widget class="QLineEdit" name="meshLineEdit"/>
        </item>
       </layout>
-     </item>
-     <item>
-      <widget class="QToolButton" name="swapMeshesToolButton">
-       <property name="icon">
-        <iconset resource="../qVoxFall.qrc">
-         <normaloff>:/CC/plugin/qVoxFall/images/iconSwap.png</normaloff>:/CC/plugin/qVoxFall/images/iconSwap.png</iconset>
-       </property>
-      </widget>
      </item>
     </layout>
    </item>
@@ -233,11 +212,8 @@
   </layout>
  </widget>
  <tabstops>
-  <tabstop>showMesh1CheckBox</tabstop>
-  <tabstop>mesh1LineEdit</tabstop>
-  <tabstop>showMesh2CheckBox</tabstop>
-  <tabstop>mesh2LineEdit</tabstop>
-  <tabstop>swapMeshesToolButton</tabstop>
+  <tabstop>showMeshCheckBox</tabstop>
+  <tabstop>meshLineEdit</tabstop>
   <tabstop>voxelSizeDoubleSpinBox</tabstop>
   <tabstop>azDoubleSpinBox</tabstop>
   <tabstop>autoFitPlaneButton</tabstop>

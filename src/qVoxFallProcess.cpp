@@ -61,7 +61,6 @@ using namespace CCCoreLib;
 //! Default name for VoxFall scalar fields
 static const char OCCUPANCY_SF_NAME[] = "Occupancy";
 static const char CLUSTER_SF_NAME[] = "Cluster ID";
-static const char CHANGE_TYPE_SF_NAME[] = "Loss/gain";
 static const char VOLUME_SF_NAME[] = "Volume (m3)";
 static const char UNCERTAINTY_SF_NAME[] = "Uncertainty (%)";
 
@@ -76,7 +75,6 @@ struct VoxFallParams
 	int changeType;
 	bool genarateReport = false;
 	bool exportBlocksAsMeshes = false;
-	bool exportLossGain = false;
 	CCVector3 minBound, maxBound, extent, steps;
 
 	//helpers
@@ -326,22 +324,6 @@ bool ComputeClusterVolume(int maxThreads, int clusterCount, ccHObject* clusterGr
 				s_VoxFallParams.clusterOutterVoxelCount++;
 				s_VoxFallParams.nonEmptyVoxelsVisited[nb] = true;
 
-				if (s_VoxFallParams.exportLossGain)
-				{
-					Tuple3i V = qVoxFallTools::Index2Grid(nb, s_VoxFallParams.steps);
-					CCVector3 voxel(static_cast<PointCoordinateType>(V.x * s_VoxFallParams.voxelSize + s_VoxFallParams.minBound.x),
-						static_cast<PointCoordinateType>(V.y * s_VoxFallParams.voxelSize + s_VoxFallParams.minBound.y),
-						static_cast<PointCoordinateType>(V.z * s_VoxFallParams.voxelSize + s_VoxFallParams.minBound.z));
-
-					if (voxel.x > maxBound.x) maxBound.x = static_cast<PointCoordinateType>(voxel.x);
-					if (voxel.y > maxBound.y) maxBound.y = static_cast<PointCoordinateType>(voxel.y);
-					if (voxel.z > maxBound.z) maxBound.z = static_cast<PointCoordinateType>(voxel.z);
-
-					if (voxel.x < minBound.x) minBound.x = static_cast<PointCoordinateType>(voxel.x);
-					if (voxel.y < minBound.y) minBound.y = static_cast<PointCoordinateType>(voxel.y);
-					if (voxel.z < minBound.z) minBound.z = static_cast<PointCoordinateType>(voxel.z);
-				}
-
 			}
 			if (s_VoxFallParams.exportBlocksAsMeshes)
 			{
@@ -356,20 +338,6 @@ bool ComputeClusterVolume(int maxThreads, int clusterCount, ccHObject* clusterGr
 		}
 	}
 
-	if (s_VoxFallParams.exportLossGain)
-	{
-		float ymin = minBound.y;
-		float ymax = maxBound.y;
-		CCVector3 extent = maxBound - minBound;
-		CCVector3 center = minBound + extent / 2;
-		minBound += extent / static_cast<PointCoordinateType>(2 * 0.9);
-		maxBound -= extent / static_cast<PointCoordinateType>(2 * 0.9);
-		maxBound.y = ymax + (ymax - ymin) / 2.0;
-
-		s_VoxFallParams.centroid = minBound + (maxBound - minBound) / 1.5;
-		s_VoxFallParams.bbDims = (maxBound - minBound) / 2;
-	}
-
 	if (error) return !error;
 	return !error;
 }
@@ -380,10 +348,9 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 	errorMessage.clear();
 
 	//get the input meshes in the right order
-	ccMesh* mesh1 = dlg.getMesh1();
-	ccMesh* mesh2 = dlg.getMesh2();
+	ccMesh* mesh = dlg.getMesh();
 
-	if (!mesh1 || !mesh2)
+	if (!mesh)
 	{
 		assert(false);
 		return false;
@@ -407,14 +374,8 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 	QElapsedTimer initTimer;
 	initTimer.start();
 
-	auto mesh = mesh1->cloneMesh();
-	mesh->merge(mesh2, false);
-
 	auto transform = qVoxFallTransform(dip, azimuth);
 	mesh->applyGLTransformation_recursive(&transform.matrix);
-	mesh1->applyGLTransformation_recursive(&transform.matrix);
-
-	mesh1->setEnabled(false);
 
 	//parameters are stored in 's_VoxFallParams' for parallel call
 	s_VoxFallParams = VoxFallParams();
@@ -424,9 +385,8 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 	s_VoxFallParams.extent = s_VoxFallParams.maxBound - s_VoxFallParams.minBound;
 	s_VoxFallParams.steps = (s_VoxFallParams.extent / s_VoxFallParams.voxelSize) + Vector3Tpl<float>(1, 1, 1);
 	s_VoxFallParams.genarateReport = dlg.getGenerateReportActivation();
-	s_VoxFallParams.exportBlocksAsMeshes = dlg.getExportMeshesActivation();
-	s_VoxFallParams.exportLossGain = dlg.getLossGainActivation();
-	s_VoxFallParams.groupName = mesh1->getName() + "_to_" + mesh2->getName() + QString(" [VoxFall clusters] (voxel %1 m)").arg(s_VoxFallParams.voxelSize);
+	s_VoxFallParams.exportBlocksAsMeshes = dlg.getExportMeshActivation();
+	s_VoxFallParams.groupName = mesh->getName() + QString(" [VoxFall clusters] (voxel %1 m)").arg(s_VoxFallParams.voxelSize);
 	s_VoxFallParams.voxfall = new ccPointCloud(s_VoxFallParams.groupName);
 
 	//Initialize voxel grid
@@ -459,17 +419,6 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 		return false;
 	}
 
-	if (s_VoxFallParams.exportLossGain)
-	{
-		//allocate change type SF
-		s_VoxFallParams.changeTypeSF = new ccScalarField(CHANGE_TYPE_SF_NAME);
-		s_VoxFallParams.changeTypeSF->link();
-		if (!s_VoxFallParams.changeTypeSF->resizeSafe(voxelGrid.innerCellCount(), true, CCCoreLib::NAN_VALUE))
-		{
-			errorMessage = "Failed to allocate memory for change type values!";
-			return false;
-		}
-	}
 	//allocate volume SF
 	s_VoxFallParams.volumeSF = new ccScalarField(VOLUME_SF_NAME);
 	s_VoxFallParams.volumeSF->link();
@@ -516,20 +465,6 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 	{
 		errorMessage = "Failed to compute  grid occupancy!";
 		return false;
-	}
-
-
-	if (s_VoxFallParams.exportLossGain)
-	{
-		if (!voxelGrid.intersectWith(mesh1,
-			s_VoxFallParams.voxelSize,
-			s_VoxFallParams.minBound,
-			GetVoxelOccupancyBefore,
-			&pDlg))
-		{
-			errorMessage = "Failed to compute  grid occupancy!";
-			return false;
-		}
 	}
 
 	//cluster DBSCAN
@@ -589,43 +524,12 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 			return false;
 		}
 
-		if (s_VoxFallParams.exportLossGain)
-		{
-			int count = 0;
-			mesh1->placeIteratorAtBeginning();
-			for (unsigned n = 0; n < mesh1->size(); n++)
-			{
-				//get the positions (in the grid) of each vertex
-				const GenericTriangle* T = mesh1->_getNextTriangle();
-
-				//current triangle vertices
-				const CCVector3* triPoints[3]{ T->_getA(), T->_getB(), T->_getC() };
-
-				if (CCMiscTools::TriBoxOverlap(s_VoxFallParams.centroid, s_VoxFallParams.bbDims, triPoints))
-				{
-					count++;
-				}
-			}
-			if (count > 0)
-			{
-				s_VoxFallParams.changeType = -1;
-			}
-			else
-			{
-				s_VoxFallParams.changeType = 1;
-			}
-		}
-		ScalarType changeType = static_cast<ScalarType>(s_VoxFallParams.changeType);
 		ScalarType uncertainty = static_cast<ScalarType>(pow(s_VoxFallParams.voxelSize, 3) * s_VoxFallParams.clusterOutterVoxelCount / 2);
 		ScalarType volume = static_cast<ScalarType>(pow(s_VoxFallParams.voxelSize, 3) * s_VoxFallParams.clusterIndices.size() + uncertainty);
 		s_VoxFallParams.volumes[label - 1] = volume;
 
 		for (unsigned i = 0; i < s_VoxFallParams.clusterIndices.size(); i++)
 		{
-			if (s_VoxFallParams.exportLossGain)
-			{
-				s_VoxFallParams.changeTypeSF->setValue(s_VoxFallParams.clusterIndices[i], changeType);
-			}
 			s_VoxFallParams.volumeSF->setValue(s_VoxFallParams.clusterIndices[i], volume);
 			s_VoxFallParams.uncertaintySF->setValue(s_VoxFallParams.clusterIndices[i], volume/uncertainty/100);
 		}
@@ -743,16 +647,6 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 		s_VoxFallParams.clusterSF->computeMinAndMax();
 		sfIdx = s_VoxFallParams.voxfall->addScalarField(s_VoxFallParams.clusterSF);
 	}
-	if (s_VoxFallParams.exportLossGain)
-	{
-		//associate change type scalar fields to the voxel grid
-		if (s_VoxFallParams.changeTypeSF)
-		{
-			//add cluster ID SF to voxel grid
-			s_VoxFallParams.changeTypeSF->computeMinAndMax();
-			sfIdx = s_VoxFallParams.voxfall->addScalarField(s_VoxFallParams.changeTypeSF);
-		}
-	}
 	//associate volume scalar field to the voxel grid
 	if (s_VoxFallParams.volumeSF)
 	{
@@ -769,7 +663,7 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 	}
 
 	//prepare export cloud
-	mesh1->applyGLTransformation_recursive(&transform.inverse);
+	mesh->applyGLTransformation_recursive(&transform.inverse);
 	s_VoxFallParams.voxfall->applyGLTransformation_recursive(&transform.inverse);
 	sfIdx = s_VoxFallParams.voxfall->getScalarFieldIndexByName(CLUSTER_SF_NAME);
 	s_VoxFallParams.voxfall->setCurrentDisplayedScalarField(sfIdx);;
@@ -802,7 +696,6 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 		outStream << " Extent X,";
 		outStream << " Extent Y,";
 		outStream << " Extent Z,";
-		outStream << " Change type,";
 		outStream << " Volume (m3),";
 		outStream << " Uncertainty (m3),";
 		outStream << " \n";
@@ -821,22 +714,6 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 			sfIdx = cluster->getScalarFieldIndexByName(UNCERTAINTY_SF_NAME);
 			cluster->setCurrentDisplayedScalarField(sfIdx);;
 			auto uncertainty = cluster->getPointScalarValue(static_cast<unsigned int>(0));
-			auto loss_gain = "n/a";
-			if (s_VoxFallParams.exportLossGain)
-			{
-				sfIdx = cluster->getScalarFieldIndexByName(CHANGE_TYPE_SF_NAME);
-				cluster->setCurrentDisplayedScalarField(sfIdx);;
-				auto changeType = cluster->getPointScalarValue(static_cast<unsigned int>(0));
-
-				if (s_VoxFallParams.changeType == -1)
-				{
-					loss_gain = "loss";
-				}
-				else
-				{
-					loss_gain = "gain";
-				}
-			}
 			
 			//add data to file
 			outStream << label << ","; //cluster ID
@@ -844,7 +721,6 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 			if (extent.x > 0) { outStream << extent.x << ","; } else { outStream << s_VoxFallParams.voxelSize << ","; }; //extent X
 			if (extent.y > 0) { outStream << extent.y << ","; } else { outStream << s_VoxFallParams.voxelSize << ","; }; //extent Y
 			if (extent.z > 0) { outStream << extent.z << ","; } else { outStream << s_VoxFallParams.voxelSize << ","; }; //extent Z
-			outStream << loss_gain << ","; //change type (loss/gain)
 			outStream << volume << ","; //volume
 			outStream << uncertainty << ","; //uncertainty
 			outStream << " \n";

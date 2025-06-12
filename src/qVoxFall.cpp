@@ -43,9 +43,8 @@ void qVoxFall::onNewSelection( const ccHObject::Container &selectedEntities )
 {
 	if ( m_action )
 	{
-		m_action->setEnabled( selectedEntities.size() == 2
-							&& selectedEntities[0]->isA(CC_TYPES::MESH)
-							&& selectedEntities[1]->isA(CC_TYPES::MESH) );
+		m_action->setEnabled( selectedEntities.size() == 1
+							&& selectedEntities[0]->isA(CC_TYPES::MESH) );
 	}
 	
 	m_selectedEntities = selectedEntities;
@@ -78,22 +77,20 @@ void qVoxFall::doAction()
 	if (!m_app)
 		return;
 
-	if (m_selectedEntities.size() != 2
-		|| !m_selectedEntities[0]->isA(CC_TYPES::MESH)
-		|| !m_selectedEntities[1]->isA(CC_TYPES::MESH))
+	if (m_selectedEntities.size() != 1
+		|| !m_selectedEntities[0]->isA(CC_TYPES::MESH))
 	{
 		m_app->dispToConsole("Select two meshes !", ccMainAppInterface::ERR_CONSOLE_MESSAGE);
 		return;
 	}
 
-	ccMesh* mesh1 = ccHObjectCaster::ToMesh(m_selectedEntities[0]);
-	ccMesh* mesh2 = ccHObjectCaster::ToMesh(m_selectedEntities[1]);
+	ccMesh* mesh = ccHObjectCaster::ToMesh(m_selectedEntities[0]);
 
 
 	m_app->dispToConsole("[VoxFall] Meshes loaded successfully", ccMainAppInterface::STD_CONSOLE_MESSAGE);
 
 	//display dialog
-	qVoxFallDialog dlg(mesh1, mesh2, m_app);
+	qVoxFallDialog dlg(mesh, m_app);
 	if (!dlg.exec())
 	{
 		//process cancelled by the user
@@ -129,7 +126,7 @@ void qVoxFall::doAction()
 		}
 		else
 		{
-			mesh1->setEnabled(false);
+			mesh->setEnabled(false);
 			m_app->dispToConsole("[VoxFall] Completed!", ccMainAppInterface::STD_CONSOLE_MESSAGE);
 		}	
 	}
