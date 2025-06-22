@@ -176,10 +176,10 @@ double qVoxFallDialog::getDip() const
 	return dip;
 }
 
-double qVoxFallDialog::getAzimuth() const
+double qVoxFallDialog::getDipDir() const
 {
-	double azimuth = azDoubleSpinBox->value();
-	return azimuth;
+	double dipdir = dipDirDoubleSpinBox->value();
+	return dipdir;
 }
 
 bool qVoxFallDialog::getGenerateReportActivation() const
@@ -226,7 +226,8 @@ void qVoxFallDialog::loadParamsFrom(const QSettings& settings)
 {
 	//read parameters
 	double voxelSize = settings.value("VoxelSize", voxelSizeDoubleSpinBox->value()).toDouble();
-	double azimuth = settings.value("Azimuth", azDoubleSpinBox->value()).toDouble();
+	double dip = settings.value("Dip", dipDoubleSpinBox->value()).toDouble();
+	double dipdir = settings.value("DipDir", dipDirDoubleSpinBox->value()).toDouble();
 	bool generateReportEnabled = settings.value("GenerateReportEnabled", generateReportBox->isChecked()).toBool();
 	QString reportPath = settings.value("ReportPath", ccFileUtils::defaultDocPath()).toString();
 	//for the first time it is launched
@@ -239,7 +240,8 @@ void qVoxFallDialog::loadParamsFrom(const QSettings& settings)
 
 	//apply parameters
 	voxelSizeDoubleSpinBox->setValue(voxelSize);
-	azDoubleSpinBox->setValue(azimuth);
+	dipDoubleSpinBox->setValue(dip);
+	dipDirDoubleSpinBox->setValue(dipdir);
 	generateReportBox->setChecked(generateReportEnabled);
 	destinationPathLineEdit->setText(reportPath);
 	exportCheckBox->setChecked(exportMeshesEnabled);
@@ -256,7 +258,8 @@ void qVoxFallDialog::saveParamsTo(QSettings& settings)
 {
 	//save parameters
 	settings.setValue("VoxelSize", voxelSizeDoubleSpinBox->value());
-	settings.setValue("Azimuth", azDoubleSpinBox->value());
+	settings.setValue("Dip", dipDoubleSpinBox->value());
+	settings.setValue("DipDir", dipDirDoubleSpinBox->value());
 	settings.setValue("GenerateReportEnabled", generateReportBox->isChecked());
 	settings.setValue("ReportPath", destinationPathLineEdit->text());
 	settings.setValue("ExportMeshesEnabled", exportCheckBox->isChecked());
@@ -283,7 +286,7 @@ void qVoxFallDialog::autoFitPlane()
 			m_app->dispToConsole("[VoxFall] Orientation: From existing plane");
 			m_app->dispToConsole(QString("\t- %1").arg(dipAndDipDirStr));
 			dipDoubleSpinBox->setValue(dip);
-			azDoubleSpinBox->setValue(dipDir);
+			dipDirDoubleSpinBox->setValue(dipDir);
 			return;
 		}
 	}
@@ -336,7 +339,7 @@ void qVoxFallDialog::autoFitPlane()
 			QString dipAndDipDirStr = ccNormalVectors::ConvertDipAndDipDirToString(dip, dipDir);
 			m_app->dispToConsole(QString("\t- %1").arg(dipAndDipDirStr));
 			dipDoubleSpinBox->setValue(dip);
-			azDoubleSpinBox->setValue(dipDir);
+			dipDirDoubleSpinBox->setValue(dipDir);
 
 			//hack: output the transformation matrix that would make this normal points towards +Z
 			ccGLMatrix makeZPosMatrix = ccGLMatrix::FromToRotation(N, CCVector3(0, 0, CCCoreLib::PC_ONE));

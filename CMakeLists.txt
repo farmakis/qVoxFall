@@ -1,6 +1,4 @@
-﻿cmake_minimum_required(VERSION 3.18)
-
-option( PLUGIN_STANDARD_QVOXFALL "Install qVoxFall plugin" OFF )
+﻿option( PLUGIN_STANDARD_QVOXFALL "Install qVoxFall plugin" OFF )
 
 if ( PLUGIN_STANDARD_QVOXFALL )
 	project( QVOXFALL_PLUGIN)

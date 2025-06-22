@@ -38,6 +38,8 @@ public:
 	
 	static bool Compute(const qVoxFallDialog& dlg,
 						QString& errorMessage,
+						ccPointCloud*& outputCloud,
+						ccHObject*& outputGroup,
 						bool allowDialogs,
 						QWidget* parentWidget = nullptr,
 						ccMainAppInterface* app = nullptr);
