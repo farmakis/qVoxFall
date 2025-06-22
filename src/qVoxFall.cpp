@@ -25,6 +25,7 @@
 //local
 #include "qVoxFallDialog.h"
 #include "qVoxFallDisclaimerDialog.h"
+#include "qVoxFallCommands.h"
 #include "qVoxFallProcess.h"
 
 //qCC_db
@@ -121,7 +122,9 @@ void qVoxFall::doAction()
 	m_app->dispToConsole(QString("[VoxFall] Voxel size: %1 m").arg(dlg.getVoxelSize()), ccMainAppInterface::STD_CONSOLE_MESSAGE);
 
 	QString errorMessage;
-	if (!qVoxFallProcess::Compute(dlg, errorMessage, true, m_app->getMainWindow(), m_app))
+	ccPointCloud* outputCloud = nullptr; //only necessary for the command line version in fact
+	ccHObject* outputGroup = nullptr; //only necessary for the command line version in fact
+	if (!qVoxFallProcess::Compute(dlg, errorMessage, outputCloud, outputGroup, true, m_app->getMainWindow(), m_app))
 	{
 		if (!errorMessage.isEmpty())
 		{
@@ -137,3 +140,14 @@ void qVoxFall::doAction()
 	//'Compute' may change some parameters of the dialog
 	dlg.saveParamsToPersistentSettings();
 }
+
+void qVoxFall::registerCommands(ccCommandLineInterface* cmd)
+{
+	if (!cmd)
+	{
+		assert(false);
+		return;
+	}
+	cmd->registerCommand(ccCommandLineInterface::Command::Shared(new CommandVOXFALL));
+}
+

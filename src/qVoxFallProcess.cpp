@@ -192,6 +192,7 @@ bool ClusterEmptySpace(int maxThreads, int voxelCount, GenericProgressCallback* 
 			int nIdx = qVoxFallTools::Grid2Index(n, steps);
 			s_VoxFallParams.nbs[index].push_back(nIdx);
 		}
+		//nProgress.oneStep();
 #if defined(_OPENMP)
 #pragma omp critical(ClusterEmptySpace)
 		{ nProgress.oneStep(); }
@@ -375,9 +376,11 @@ bool ComputeClusterVolume(int maxThreads, int clusterCount, ccHObject* clusterGr
 }
 
 
-bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, bool allowDialogs, QWidget* parentWidget/*=nullptr*/, ccMainAppInterface* app/*=nullptr*/)
+bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, ccPointCloud*& outputCloud, ccHObject*& outputGroup, bool allowDialogs, QWidget* parentWidget/*=nullptr*/, ccMainAppInterface* app/*=nullptr*/)
 {
 	errorMessage.clear();
+	outputCloud = nullptr;
+	outputGroup = nullptr;
 
 	//get the input meshes in the right order
 	ccMesh* mesh1 = dlg.getMesh1();
@@ -391,7 +394,7 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 
 	//get parameters from dialog
 	double dip = dlg.getDip();
-	double azimuth = dlg.getAzimuth();
+	double dipdir = dlg.getDipDir();
 
 	//max thread count
 	int maxThreadCount = dlg.getMaxThreadCount();
@@ -410,7 +413,7 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 	auto mesh = mesh1->cloneMesh();
 	mesh->merge(mesh2, false);
 
-	auto transform = qVoxFallTransform(dip, azimuth);
+	auto transform = qVoxFallTransform(dip, dipdir);
 	mesh->applyGLTransformation_recursive(&transform.matrix);
 	mesh1->applyGLTransformation_recursive(&transform.matrix);
 
@@ -426,7 +429,7 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 	s_VoxFallParams.genarateReport = dlg.getGenerateReportActivation();
 	s_VoxFallParams.exportBlocksAsMeshes = dlg.getExportMeshesActivation();
 	s_VoxFallParams.exportLossGain = dlg.getLossGainActivation();
-	s_VoxFallParams.groupName = mesh1->getName() + "_to_" + mesh2->getName() + QString(" [VoxFall clusters] (voxel %1 m)").arg(s_VoxFallParams.voxelSize);
+	s_VoxFallParams.groupName = mesh1->getName() + "_to_" + mesh2->getName() + QString(" [VoxFall] (voxel %1m)").arg(s_VoxFallParams.voxelSize);
 	s_VoxFallParams.voxfall = new ccPointCloud(s_VoxFallParams.groupName);
 
 	//Initialize voxel grid
@@ -497,8 +500,10 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 	qint64 initTime_ms = initTimer.elapsed();
 	//we display init. timing only if no error occurred!
 	if (app)
-		app->dispToConsole(	QString("[VoxFall] Initialization: %1 s").arg(initTime_ms / 1000.0, 0, 'f', 3),
-							ccMainAppInterface::STD_CONSOLE_MESSAGE	);
+	{
+		app->dispToConsole(QString("[VoxFall] Initialization: %1 s").arg(initTime_ms / 1000.0, 0, 'f', 3),
+			ccMainAppInterface::STD_CONSOLE_MESSAGE);
+	}
 
 
 // 	   BLOCK DETECTION
@@ -544,10 +549,12 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 	qint64 detectTime_ms = detectTimer.elapsed();
 	//we display block extraction timing only if no error occurred!
 	if (app)
+	{
 		app->dispToConsole(QString("[VoxFall] Block detection: %1 s").arg(detectTime_ms / 1000.0, 0, 'f', 3),
 			ccMainAppInterface::STD_CONSOLE_MESSAGE);
-		app->dispToConsole(	QString("[VoxFall] Blocks found: %1").arg(s_VoxFallParams.clusterLabel - 1),
-							ccMainAppInterface::STD_CONSOLE_MESSAGE	);
+		app->dispToConsole(QString("[VoxFall] Blocks found: %1").arg(s_VoxFallParams.clusterLabel - 1),
+			ccMainAppInterface::STD_CONSOLE_MESSAGE);
+	}
 
 // 	   COMPUTE VOLUMES
 //=======================================================================================================================
@@ -566,7 +573,6 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 	pDlg.update(0);
 	pDlg.start();
 	s_VoxFallParams.nProgress = &nProgress;
-
 
 	s_VoxFallParams.volumes.resize(s_VoxFallParams.clusterLabel);
 	s_VoxFallParams.nonEmptyVoxelsVisited.resize(voxelGrid.innerCellCount(), false);
@@ -635,8 +641,10 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 	qint64 volumeTime_ms = volumeTimer.elapsed();
 	//we display block volume computation timing only if no error occurred!
 	if (app)
+	{
 		app->dispToConsole(QString("[VoxFall] Volume computation: %1 s").arg(volumeTime_ms / 1000.0, 0, 'f', 3),
 			ccMainAppInterface::STD_CONSOLE_MESSAGE);
+	}
 
 
 // 	   EXPORT BLOCKS AS VOXEL MESH MODELS (IF SELECTED)
@@ -722,13 +730,23 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 			indices.clear();
 		}
 		ccGroup->setVisible(true);
-		app->addToDB(ccGroup);
+		if (app)
+		{
+			app->addToDB(ccGroup);
+		}
+		else
+		{
+			// command line mode
+			outputGroup = ccGroup;
+		}
 
 		qint64 meshTime_ms = meshTimer.elapsed();
 		//we display block as mesh export timing only if no error occurred!
 		if (app)
+		{
 			app->dispToConsole(QString("[VoxFall] Block as mesh export: %1 s").arg(meshTime_ms / 1000.0, 0, 'f', 3),
 				ccMainAppInterface::STD_CONSOLE_MESSAGE);
+		}
 	}
 
 
@@ -778,7 +796,15 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 	{
 		s_VoxFallParams.voxfall->setEnabled(false);
 	}
-	app->addToDB(s_VoxFallParams.voxfall);
+	if (app)
+	{
+		app->addToDB(s_VoxFallParams.voxfall);
+	}
+	else
+	{
+		// command line mode
+		outputCloud = s_VoxFallParams.voxfall;
+	}
 	
 	//if "generate report" is selected, open CSV file
 	if (s_VoxFallParams.genarateReport)
@@ -852,12 +878,16 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 
 		outFile.close();
 		if (app)
+		{
 			app->dispToConsole(QString("[VoxFall] Report generated at: " + dlg.destinationPathLineEdit->text()),
 				ccMainAppInterface::STD_CONSOLE_MESSAGE);
+		}
 	}
 	
 	if (app)
+	{
 		app->refreshAll();
+	}
 
 	return true;
 }

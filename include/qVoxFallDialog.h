@@ -45,8 +45,8 @@ public:
 	double getVoxelSize() const;
 	//! Returns slope dip
 	double getDip() const;
-	//! Returns slope azimuth
-	double getAzimuth() const;
+	//! Returns slope dip direction (azimuth)
+	double getDipDir() const;
 	//! Returns whether a report will be generated
 	bool getGenerateReportActivation() const;
 	//! Returns whether the blocks will be exported as meshes

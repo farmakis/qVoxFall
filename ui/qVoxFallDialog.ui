@@ -147,7 +147,7 @@
          </widget>
         </item>
         <item row="1" column="3">
-         <widget class="QDoubleSpinBox" name="azDoubleSpinBox">
+         <widget class="QDoubleSpinBox" name="dipDirDoubleSpinBox">
           <property name="decimals">
            <number>0</number>
           </property>
@@ -194,7 +194,7 @@
 		<item row="1" column="0">	
 		 <widget class="QCheckBox" name="exportCheckBox">
 		  <property name="text">
-		   <string>Export meshes</string>
+		   <string>Export clusters</string>
 		  </property>
 		  <property name="checked">
 		   <bool>true</bool>
@@ -239,7 +239,8 @@
   <tabstop>mesh2LineEdit</tabstop>
   <tabstop>swapMeshesToolButton</tabstop>
   <tabstop>voxelSizeDoubleSpinBox</tabstop>
-  <tabstop>azDoubleSpinBox</tabstop>
+  <tabstop>dipDoubleSpinBox</tabstop>
+  <tabstop>dipDirDoubleSpinBox</tabstop>
   <tabstop>autoFitPlaneButton</tabstop>
   <tabstop>generateReportBox</tabstop>
   <tabstop>exportCheckBox</tabstop>

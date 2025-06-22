@@ -32,12 +32,15 @@ class qVoxFall : public QObject, public ccStdPluginInterface
 	Q_PLUGIN_METADATA( IID "cccorp.cloudcompare.plugin.qVoxFall" FILE "../info.json" )
 
 public:
-	explicit qVoxFall( QObject *parent = nullptr );
-	~qVoxFall() override = default;
+	//! Default constructor
+	qVoxFall(QObject* parent = nullptr);
+
+	virtual ~qVoxFall() = default;
 
 	// Inherited from ccStdPluginInterface
-	void onNewSelection( const ccHObject::Container &selectedEntities ) override;
-	QList<QAction *> getActions() override;
+	virtual void onNewSelection( const ccHObject::Container &selectedEntities ) override;
+	virtual QList<QAction *> getActions() override;
+	virtual void registerCommands(ccCommandLineInterface* cmd) override;
 
 private:
 	
