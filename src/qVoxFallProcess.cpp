@@ -16,6 +16,7 @@
 //##########################################################################
 
 #include "qVoxFallProcess.h"
+#include "qVoxFallCore.h"
 
 //system
 #include <atomic>
@@ -26,7 +27,6 @@
 #include "qVoxFallTools.h"
 
 //CCCoreLib
-#include <CloudSamplingTools.h>
 #include "Grid3D.h"
 
 //qCC_plugins
@@ -59,328 +59,19 @@ using namespace CCCoreLib;
 
 
 //! Default name for VoxFall scalar fields
-static const char OCCUPANCY_SF_NAME[] = "Occupancy";
-static const char CLUSTER_SF_NAME[] = "Cluster ID";
 static const char CHANGE_TYPE_SF_NAME[] = "Loss/gain";
 static const char VOLUME_SF_NAME[] = "Volume (m3)";
 static const char UNCERTAINTY_SF_NAME[] = "Uncertainty (%)";
+static const char CONNECTED_COMPONENTS_SF_NAME[] = "CC labels";
 
-
-// Structure for parallel call
-struct VoxFallParams
-{
-	//main options
-	float voxelSize = 0;
-	int clusterLabel = 0;
-	int currentLabel;
-	int changeType;
-	bool genarateReport = false;
-	bool exportBlocksAsMeshes = false;
-	bool exportLossGain = false;
-	CCVector3 minBound, maxBound, extent, steps;
-
-	//helpers
-	std::vector<std::vector<int>> nbs;
-	std::vector<bool> isEmpty;
-	std::vector<bool> isEmptyBefore;
-	std::vector<bool> nonEmptyVoxelsVisited;
-	std::vector<int> clusters;
-	int emptyVoxelCount = 0;
-	CCVector3 centroid;
-	CCVector3 bbDims;
-	std::vector<float> volumes;
-	std::vector<unsigned int> clusterIndices;
-	int clusterOutterVoxelCount;
-
-	//export
-	ccPointCloud* voxfall = nullptr;
-	QString groupName;
-
-	//scalar fields
-	ccScalarField* clusterSF = nullptr;			//cluster ID
-	ccScalarField* changeTypeSF = nullptr;		//loss or gain
-	ccScalarField* volumeSF = nullptr;			//block volume
-	ccScalarField* uncertaintySF = nullptr;		//volume uncertainty
-
-	//progress notification
-	CCCoreLib::NormalizedProgress* nProgress = nullptr;
-	bool processCanceled = false;
-	bool processFailed = false;
-};
-static VoxFallParams s_VoxFallParams;
-
-
-bool InitializeOutputCloud(int voxelCount, GenericProgressCallback* progressCb = nullptr)
-{
-	//progress notification
-	NormalizedProgress nProgress(progressCb, voxelCount);
-	if (progressCb)
-	{
-		if (progressCb->textCanBeEdited())
-		{
-			progressCb->setInfo("Initialization");
-			progressCb->setMethodTitle("VoxFall Detection");
-		}
-		progressCb->update(0);
-		progressCb->start();
-	}
-
-	float voxelSize = s_VoxFallParams.voxelSize;
-	CCVector3 minBound = s_VoxFallParams.minBound;
-
-	for (int index = 0; index < voxelCount; ++index)
-	{
-		Tuple3i V = qVoxFallTools::Index2Grid(index, s_VoxFallParams.steps);
-		CCVector3 P(static_cast<PointCoordinateType>(V.x * voxelSize + minBound.x),
-					static_cast<PointCoordinateType>(V.y * voxelSize + minBound.y),
-					static_cast<PointCoordinateType>(V.z * voxelSize + minBound.z));
-		s_VoxFallParams.voxfall->addPoint(P);
-
-		//progress bar
-		if (progressCb && !nProgress.oneStep())
-		{
-			return false;
-		}
-	}
-		
-	return true;
-}
-
-
-void GetVoxelOccupancy(const Tuple3i& cellPos, unsigned n)
-{
-	int index = qVoxFallTools::Grid2Index(cellPos, s_VoxFallParams.steps);
-	s_VoxFallParams.isEmpty[index] = false;
-}
-
-
-void GetVoxelOccupancyBefore(const Tuple3i& cellPos, unsigned n)
-{
-	int index = qVoxFallTools::Grid2Index(cellPos, s_VoxFallParams.steps);
-	s_VoxFallParams.isEmptyBefore[index] = false;
-}
-
-
-bool ClusterEmptySpace(int maxThreads, int voxelCount, GenericProgressCallback* progressCb = nullptr)
-{
-	//progress notification
-	NormalizedProgress nProgress(progressCb, voxelCount);
-	if (progressCb)
-	{
-		if (progressCb->textCanBeEdited())
-		{
-			char buffer[64];
-			snprintf(buffer, 64, "Clustering empty space \n Voxels: %u", voxelCount);
-			progressCb->setInfo(buffer);
-			progressCb->setMethodTitle("VoxFall Detection");
-		}
-		progressCb->update(0);
-		progressCb->start();
-	}
-
-	auto steps = s_VoxFallParams.steps;
-	s_VoxFallParams.nbs.resize(voxelCount);
-#if defined(_OPENMP)
-#pragma omp parallel for schedule(static) \
-        num_threads(maxThreads)
-#endif
-	for (int index = 0; index < voxelCount; ++index) {
-		auto V = qVoxFallTools::Index2Grid(index, steps);
-		auto NN = qVoxFallTools::FindAdjacents(V, steps, false);
-		for (auto const& n : NN)
-		{
-			int nIdx = qVoxFallTools::Grid2Index(n, steps);
-			s_VoxFallParams.nbs[index].push_back(nIdx);
-		}
-		//nProgress.oneStep();
-#if defined(_OPENMP)
-#pragma omp critical(ClusterEmptySpace)
-		{ nProgress.oneStep(); }
-#endif
-	}
-	for (int index = 0; index < voxelCount; ++index)
-	{
-		// Check if voxel is empty.
-		if (!s_VoxFallParams.isEmpty[index])
-			continue;
-
-		// Label is not undefined.
-		if (s_VoxFallParams.clusterSF->getValue(index) != -1)
-		{
-			continue;
-		}
-
-		// Check density.
-		int nCount = 0;
-		for (auto const& n : s_VoxFallParams.nbs[index])
-		{
-			if (s_VoxFallParams.isEmpty[n])
-			{
-				nCount++;
-			}
-		}
-
-		std::unordered_set<unsigned int> nbs_next(s_VoxFallParams.nbs[index].begin(), s_VoxFallParams.nbs[index].end());
-		std::unordered_set<unsigned int> visited;
-		visited.insert(index);
-
-		s_VoxFallParams.clusterSF->setValue(index, static_cast<ScalarType>(s_VoxFallParams.clusterLabel));
-		if (s_VoxFallParams.clusterLabel > 0)	// keep track of the total voxels included in volumes
-		{
-			s_VoxFallParams.emptyVoxelCount++;
-		}
-		if (progressCb && !nProgress.oneStep())		//progress bar
-		{
-			return false;
-		}
-		while (!nbs_next.empty())
-		{
-			unsigned nb = *nbs_next.begin();
-			nbs_next.erase(nbs_next.begin());
-			// Check empty neighbor.
-			if (!s_VoxFallParams.isEmpty[nb])
-			{
-				continue;
-			}
-			visited.insert(nb);
-
-			// Not undefined label.
-			if (s_VoxFallParams.clusterSF->getValue(nb) != -1)
-			{
-				continue;
-			}
-			s_VoxFallParams.clusterSF->setValue(nb, static_cast<ScalarType>(s_VoxFallParams.clusterLabel));
-			if (s_VoxFallParams.clusterLabel > 0)	// keep track of the total voxels included in volumes
-			{
-				s_VoxFallParams.emptyVoxelCount++;
-			}
-			if (progressCb && !nProgress.oneStep())		//progress bar
-			{
-				return false;
-			}
-
-			// Get neighbor's density.
-			int nCount = 0;
-			for (auto const& n : s_VoxFallParams.nbs[nb])
-			{
-				if (s_VoxFallParams.isEmpty[n])
-				{
-					nCount++;
-				}
-			}
-			if (nCount >= 1)
-			{
-				for (int qnb : s_VoxFallParams.nbs[nb])
-				{
-					if (s_VoxFallParams.isEmpty[qnb])
-					{
-						if (visited.count(qnb) == 0)
-						{
-							nbs_next.insert(qnb);
-						}
-					}
-				}
-			}
-		}
-		s_VoxFallParams.clusterLabel++;
-	}
-	return true;
-}
-
-
-bool ComputeClusterVolume(int maxThreads, int clusterCount, ccHObject* clusterGroup = nullptr)
-{
-
-	std::atomic<bool> error(false);
-	CCVector3 minBound = s_VoxFallParams.maxBound;
-	CCVector3 maxBound = s_VoxFallParams.minBound;
-	int count = 0;
-
-	if (s_VoxFallParams.processCanceled)
-		return error;
-
-#if defined(_OPENMP)
-#pragma omp parallel for schedule(static) \
-        num_threads(maxThreads)
-#endif
-	for (int i = 0; i < clusterCount; i++)
-	{
-		int index = s_VoxFallParams.clusterIndices[i];
-
-		if(error) {
-			continue;
-		}
-
-		std::unordered_set<unsigned int> nbs_next(s_VoxFallParams.nbs[index].begin(), s_VoxFallParams.nbs[index].end());
-		while (!nbs_next.empty())
-		{
-			unsigned nb = *nbs_next.begin();
-			nbs_next.erase(nbs_next.begin());
-
-			// Check non empty neighbor.
-			if (s_VoxFallParams.isEmpty[nb])
-			{
-				continue;
-			}
-			if (s_VoxFallParams.nonEmptyVoxelsVisited[nb] == false)
-			{
-				s_VoxFallParams.clusterOutterVoxelCount++;
-				s_VoxFallParams.nonEmptyVoxelsVisited[nb] = true;
-
-				if (s_VoxFallParams.exportLossGain)
-				{
-					Tuple3i V = qVoxFallTools::Index2Grid(nb, s_VoxFallParams.steps);
-					CCVector3 voxel(static_cast<PointCoordinateType>(V.x * s_VoxFallParams.voxelSize + s_VoxFallParams.minBound.x),
-						static_cast<PointCoordinateType>(V.y * s_VoxFallParams.voxelSize + s_VoxFallParams.minBound.y),
-						static_cast<PointCoordinateType>(V.z * s_VoxFallParams.voxelSize + s_VoxFallParams.minBound.z));
-
-					if (voxel.x > maxBound.x) maxBound.x = static_cast<PointCoordinateType>(voxel.x);
-					if (voxel.y > maxBound.y) maxBound.y = static_cast<PointCoordinateType>(voxel.y);
-					if (voxel.z > maxBound.z) maxBound.z = static_cast<PointCoordinateType>(voxel.z);
-
-					if (voxel.x < minBound.x) minBound.x = static_cast<PointCoordinateType>(voxel.x);
-					if (voxel.y < minBound.y) minBound.y = static_cast<PointCoordinateType>(voxel.y);
-					if (voxel.z < minBound.z) minBound.z = static_cast<PointCoordinateType>(voxel.z);
-				}
-
-			}
-			if (s_VoxFallParams.exportBlocksAsMeshes)
-			{
-				s_VoxFallParams.clusters[nb] = s_VoxFallParams.currentLabel;
-			}
-		}
-
-		//progress bar
-		if (!s_VoxFallParams.nProgress->oneStep())
-		{
-			error = true;
-		}
-	}
-
-	if (s_VoxFallParams.exportLossGain)
-	{
-		float ymin = minBound.y;
-		float ymax = maxBound.y;
-		CCVector3 extent = maxBound - minBound;
-		CCVector3 center = minBound + extent / 2;
-		minBound += extent / static_cast<PointCoordinateType>(2 * 0.9);
-		maxBound -= extent / static_cast<PointCoordinateType>(2 * 0.9);
-		maxBound.y = ymax + (ymax - ymin) / 2.0;
-
-		s_VoxFallParams.centroid = minBound + (maxBound - minBound) / 1.5;
-		s_VoxFallParams.bbDims = (maxBound - minBound) / 2;
-	}
-
-	if (error) return !error;
-	return !error;
-}
 
 
 bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, ccPointCloud*& outputCloud, ccHObject*& outputGroup, bool allowDialogs, QWidget* parentWidget/*=nullptr*/, ccMainAppInterface* app/*=nullptr*/)
 {
 	errorMessage.clear();
-	outputCloud = nullptr;
-	outputGroup = nullptr;
+	ccPointCloud* patchCloud = nullptr;
+	ccPointCloud* appCloud = nullptr;
+	ccHObject* appGroup = nullptr;
 
 	//get the input meshes in the right order
 	ccMesh* mesh1 = dlg.getMesh1();
@@ -395,6 +86,9 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 	//get parameters from dialog
 	double dip = dlg.getDip();
 	double dipdir = dlg.getDipDir();
+	double voxelSize = dlg.getVoxelSize();
+	bool generateReport = dlg.getGenerateReportActivation();
+	bool exportBlockMeshes = dlg.getExportMeshesActivation();
 
 	//max thread count
 	int maxThreadCount = dlg.getMaxThreadCount();
@@ -406,408 +100,119 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 	//progress dialog
 	ccProgressDialog pDlg(parentWidget);
 
-	//Duration: initialization
+
+	// 	   PREPROCESSING
+	//=======================================================================================================================
 	QElapsedTimer initTimer;
 	initTimer.start();
 
-	auto mesh = mesh1->cloneMesh();
-	mesh->merge(mesh2, false);
-
-	auto transform = qVoxFallTransform(dip, dipdir);
-	mesh->applyGLTransformation_recursive(&transform.matrix);
-	mesh1->applyGLTransformation_recursive(&transform.matrix);
-
-	mesh1->setEnabled(false);
-
-	//parameters are stored in 's_VoxFallParams' for parallel call
-	s_VoxFallParams = VoxFallParams();
-	s_VoxFallParams.voxelSize = dlg.getVoxelSize();
-	s_VoxFallParams.minBound = mesh->getOwnBB().minCorner();
-	s_VoxFallParams.maxBound = mesh->getOwnBB().maxCorner();
-	s_VoxFallParams.extent = s_VoxFallParams.maxBound - s_VoxFallParams.minBound;
-	s_VoxFallParams.steps = (s_VoxFallParams.extent / s_VoxFallParams.voxelSize) + Vector3Tpl<float>(1, 1, 1);
-	s_VoxFallParams.genarateReport = dlg.getGenerateReportActivation();
-	s_VoxFallParams.exportBlocksAsMeshes = dlg.getExportMeshesActivation();
-	s_VoxFallParams.exportLossGain = dlg.getLossGainActivation();
-	s_VoxFallParams.groupName = mesh1->getName() + "_to_" + mesh2->getName() + QString(" [VoxFall] (voxel %1m)").arg(s_VoxFallParams.voxelSize);
-	s_VoxFallParams.voxfall = new ccPointCloud(s_VoxFallParams.groupName);
-
-	//Initialize voxel grid
-	auto voxelGrid = CCCoreLib::Grid3D<int>();
-	if (!voxelGrid.init(	int(s_VoxFallParams.steps.x),
-							int(s_VoxFallParams.steps.y),
-							int(s_VoxFallParams.steps.z),
-							0	))  //margin
+	// Compute initial signed distances
+	int bestOctreeLevel = 0;
+	if (!qVoxFallTools::ComputeDistances(*mesh1, *mesh2, &pDlg, maxThreadCount, bestOctreeLevel))
 	{
-		errorMessage = "Failed to initialize voxel grid!";
+		errorMessage = "Failed to compute initial distances!";
 		return false;
 	}
 
-	// Initialize heplpers
-	s_VoxFallParams.voxfall->reserve(voxelGrid.innerCellCount());
-	s_VoxFallParams.nbs.resize(voxelGrid.innerCellCount());
-	s_VoxFallParams.isEmpty.resize(voxelGrid.innerCellCount(), true);
-	s_VoxFallParams.isEmptyBefore.resize(voxelGrid.innerCellCount(), true);
-	if (s_VoxFallParams.exportBlocksAsMeshes)
-	{
-		s_VoxFallParams.clusters.resize(voxelGrid.innerCellCount(), 0);
-	}
+	//create local patches around displaced areas for processing
+	ccPointCloud* cloud = static_cast<ccPointCloud*>(mesh1->getAssociatedCloud());
+	auto distancesSF = cloud->getCurrentInScalarField();
+	ccPointCloud* lossCloud = cloud->filterPointsByScalarValue(static_cast<ScalarType>(voxelSize), distancesSF->getMax());
+	ccPointCloud* gainCloud = cloud->filterPointsByScalarValue(distancesSF->getMin(), static_cast<ScalarType>(-voxelSize));
 
-	//allocate cluster ID SF
-	s_VoxFallParams.clusterSF = new ccScalarField(CLUSTER_SF_NAME);
-	s_VoxFallParams.clusterSF->link();
-	if (!s_VoxFallParams.clusterSF->resizeSafe(voxelGrid.innerCellCount(), true, static_cast<ScalarType>(-1.0)))
+	//compute connected components on the loss and gain clouds
+	if (!qVoxFallTools::ConnectedComponents(lossCloud, bestOctreeLevel - 2, &pDlg, errorMessage))
 	{
-		errorMessage = "Failed to allocate memory for cluster ID values!";
 		return false;
 	}
-
-	if (s_VoxFallParams.exportLossGain)
+	if (!qVoxFallTools::ConnectedComponents(gainCloud, bestOctreeLevel - 2, &pDlg, errorMessage))
 	{
-		//allocate change type SF
-		s_VoxFallParams.changeTypeSF = new ccScalarField(CHANGE_TYPE_SF_NAME);
-		s_VoxFallParams.changeTypeSF->link();
-		if (!s_VoxFallParams.changeTypeSF->resizeSafe(voxelGrid.innerCellCount(), true, CCCoreLib::NAN_VALUE))
-		{
-			errorMessage = "Failed to allocate memory for change type values!";
-			return false;
-		}
-	}
-	//allocate volume SF
-	s_VoxFallParams.volumeSF = new ccScalarField(VOLUME_SF_NAME);
-	s_VoxFallParams.volumeSF->link();
-	if (!s_VoxFallParams.volumeSF->resizeSafe(voxelGrid.innerCellCount(), true, CCCoreLib::NAN_VALUE))
-	{
-		errorMessage = "Failed to allocate memory for volume values!";
-		return false;
-	}
-	//allocate volume uncertainty SF
-	s_VoxFallParams.uncertaintySF = new ccScalarField(UNCERTAINTY_SF_NAME);
-	s_VoxFallParams.uncertaintySF->link();
-	if (!s_VoxFallParams.uncertaintySF->resizeSafe(voxelGrid.innerCellCount(), true, CCCoreLib::NAN_VALUE))
-	{
-		errorMessage = "Failed to allocate memory for volume uncertainty values!";
-		return false;
-	}
-
-	// Initialize output cloud
-	if (!InitializeOutputCloud(voxelGrid.innerCellCount(), &pDlg))
-	{
-		errorMessage = "Failed to initialize output data!";
 		return false;
 	}
 
 	qint64 initTime_ms = initTimer.elapsed();
-	//we display init. timing only if no error occurred!
+	//we display block as mesh export timing only if no error occurred!
 	if (app)
 	{
-		app->dispToConsole(QString("[VoxFall] Initialization: %1 s").arg(initTime_ms / 1000.0, 0, 'f', 3),
+		app->dispToConsole(QString("[VoxFall] Preprocessing: %1 s").arg(initTime_ms / 1000.0, 0, 'f', 3),
 			ccMainAppInterface::STD_CONSOLE_MESSAGE);
 	}
 
+	// 	   VOXFALL COMPUTATION
+	//=======================================================================================================================
+	// Here starts the real VoxFall process
+	QElapsedTimer processTimer;
+	processTimer.start();
 
-// 	   BLOCK DETECTION
-//=======================================================================================================================
+	auto mesh = mesh1->cloneMesh();
+	mesh->merge(mesh2, false);
+	mesh1->setEnabled(false);
 
-	//Duration: Detection
-	QElapsedTimer detectTimer;
-	detectTimer.start();
+	auto transform = qVoxFallTransform(dip, dipdir);
+	mesh->applyGLTransformation_recursive(&transform.matrix);
 
-	if (!voxelGrid.intersectWith(	mesh,
-									s_VoxFallParams.voxelSize,
-									s_VoxFallParams.minBound,
-									GetVoxelOccupancy,
-									&pDlg	))
+	//we create output objects to store 'VoxFall clusters'
+	QString sessionName = mesh1->getName() + "_to_" + mesh2->getName() + QString(" [VoxFall] (voxel %1m)").arg(voxelSize);
+	appCloud = new ccPointCloud(sessionName);
+	appGroup = new ccHObject(sessionName);
+
+	//crop patches from mesh1 and mesh1 for each clusters bbox and pass iteratively to the core process
+	int sfIdx = lossCloud->getScalarFieldIndexByName(CONNECTED_COMPONENTS_SF_NAME);
+	auto ccSF = lossCloud->getScalarField(sfIdx);
+	int patchFirstLabel = 0;
+	patchCloud = new ccPointCloud;
+	for (int cc = 1; cc < ccSF->getMax() + 1; ++cc)
+	//for (int cc = 2; cc < 4; ++cc)
 	{
-		errorMessage = "Failed to compute  grid occupancy!";
-		return false;
-	}
+		ccPointCloud* ccCloud = lossCloud->filterPointsByScalarValue(static_cast<ScalarType>(cc), static_cast<ScalarType>(cc));
+		ccCloud->applyGLTransformation_recursive(&transform.matrix);
+		ccBBox bb = ccCloud->getOwnBB();
+		bb = qVoxFallTools::ScaleBBox(bb, 1.2);
 
-
-	if (s_VoxFallParams.exportLossGain)
-	{
-		if (!voxelGrid.intersectWith(mesh1,
-			s_VoxFallParams.voxelSize,
-			s_VoxFallParams.minBound,
-			GetVoxelOccupancyBefore,
-			&pDlg))
+		if (!qVoxFallCore::Run(	mesh,
+								&bb,
+								-1,
+								transform,
+								patchFirstLabel,
+								maxThreadCount,
+								errorMessage,
+								patchCloud,
+								appGroup,
+								dlg,
+								pDlg))
 		{
-			errorMessage = "Failed to compute  grid occupancy!";
 			return false;
 		}
+		appCloud->append(patchCloud, appCloud->size());
+		patchCloud->clear();
+		app->dispToConsole(errorMessage);
 	}
+	//ccPointCloud* ccCloud = lossCloud->filterPointsByScalarValue(static_cast<ScalarType>(3), static_cast<ScalarType>(3));
 
-	//cluster DBSCAN
-	if (!ClusterEmptySpace(	maxThreadCount,
-							voxelGrid.innerCellCount(),
-							&pDlg	))
-	{
-		errorMessage = "Failed to compute grid occupancy!";
-		return false;
-	}
-
-	qint64 detectTime_ms = detectTimer.elapsed();
-	//we display block extraction timing only if no error occurred!
 	if (app)
 	{
-		app->dispToConsole(QString("[VoxFall] Block detection: %1 s").arg(detectTime_ms / 1000.0, 0, 'f', 3),
-			ccMainAppInterface::STD_CONSOLE_MESSAGE);
-		app->dispToConsole(QString("[VoxFall] Blocks found: %1").arg(s_VoxFallParams.clusterLabel - 1),
-			ccMainAppInterface::STD_CONSOLE_MESSAGE);
-	}
-
-// 	   COMPUTE VOLUMES
-//=======================================================================================================================
-
-	//Duration: volume computation
-	QElapsedTimer volumeTimer;
-	volumeTimer.start();
-
-	//progress notification
-	pDlg.reset();
-	NormalizedProgress nProgress(&pDlg, s_VoxFallParams.emptyVoxelCount);
-	char buffer[64];
-	snprintf(buffer, 64, "VoxFall clusters: %u \n Empty voxels: %u", s_VoxFallParams.clusterLabel - 1, s_VoxFallParams.emptyVoxelCount);
-	pDlg.setInfo(buffer);
-	pDlg.setMethodTitle(QObject::tr("Compute Volumes"));
-	pDlg.update(0);
-	pDlg.start();
-	s_VoxFallParams.nProgress = &nProgress;
-
-	s_VoxFallParams.volumes.resize(s_VoxFallParams.clusterLabel);
-	s_VoxFallParams.nonEmptyVoxelsVisited.resize(voxelGrid.innerCellCount(), false);
-	for (int label = 1; label < s_VoxFallParams.clusterLabel; ++label)
-	{
-		for (unsigned i = 0; i < static_cast<unsigned>(s_VoxFallParams.clusterSF->size()); ++i)
-		{
-			if (s_VoxFallParams.clusterSF->getValue(i) == static_cast<ScalarType>(label))
-			{
-				s_VoxFallParams.clusterIndices.push_back(i);
-			}
-		}
-
-		s_VoxFallParams.currentLabel = label;
-		s_VoxFallParams.clusterOutterVoxelCount = 0;
-
-		if (!ComputeClusterVolume(	maxThreadCount, static_cast<int>(s_VoxFallParams.clusterIndices.size()) ))
-		{
-			errorMessage = "Failed to compute cluster volume!";
-			return false;
-		}
-
-		if (s_VoxFallParams.exportLossGain)
-		{
-			int count = 0;
-			mesh1->placeIteratorAtBeginning();
-			for (unsigned n = 0; n < mesh1->size(); n++)
-			{
-				//get the positions (in the grid) of each vertex
-				const GenericTriangle* T = mesh1->_getNextTriangle();
-
-				//current triangle vertices
-				const CCVector3* triPoints[3]{ T->_getA(), T->_getB(), T->_getC() };
-
-				if (CCMiscTools::TriBoxOverlap(s_VoxFallParams.centroid, s_VoxFallParams.bbDims, triPoints))
-				{
-					count++;
-				}
-			}
-			if (count > 0)
-			{
-				s_VoxFallParams.changeType = -1;
-			}
-			else
-			{
-				s_VoxFallParams.changeType = 1;
-			}
-		}
-		ScalarType changeType = static_cast<ScalarType>(s_VoxFallParams.changeType);
-		ScalarType uncertainty = static_cast<ScalarType>(pow(s_VoxFallParams.voxelSize, 3) * s_VoxFallParams.clusterOutterVoxelCount / 2);
-		ScalarType volume = static_cast<ScalarType>(pow(s_VoxFallParams.voxelSize, 3) * s_VoxFallParams.clusterIndices.size() + uncertainty);
-		s_VoxFallParams.volumes[label - 1] = volume;
-
-		for (unsigned i = 0; i < s_VoxFallParams.clusterIndices.size(); i++)
-		{
-			if (s_VoxFallParams.exportLossGain)
-			{
-				s_VoxFallParams.changeTypeSF->setValue(s_VoxFallParams.clusterIndices[i], changeType);
-			}
-			s_VoxFallParams.volumeSF->setValue(s_VoxFallParams.clusterIndices[i], volume);
-			s_VoxFallParams.uncertaintySF->setValue(s_VoxFallParams.clusterIndices[i], volume/uncertainty/100);
-		}
-		s_VoxFallParams.clusterIndices.clear();
-	}
-
-	qint64 volumeTime_ms = volumeTimer.elapsed();
-	//we display block volume computation timing only if no error occurred!
-	if (app)
-	{
-		app->dispToConsole(QString("[VoxFall] Volume computation: %1 s").arg(volumeTime_ms / 1000.0, 0, 'f', 3),
-			ccMainAppInterface::STD_CONSOLE_MESSAGE);
-	}
-
-
-// 	   EXPORT BLOCKS AS VOXEL MESH MODELS (IF SELECTED)
-//=======================================================================================================================
-
-	if (s_VoxFallParams.exportBlocksAsMeshes)
-	{
-		//Duration: block meshing
-		QElapsedTimer meshTimer;
-		meshTimer.start();
-
-		//progress notification
-		pDlg.reset();
-		NormalizedProgress nProgress(&pDlg, s_VoxFallParams.emptyVoxelCount);
-		char buffer[64];
-		snprintf(buffer, 64, "Blocks: %u", s_VoxFallParams.clusterLabel - 1);
-		pDlg.setInfo(buffer);
-		pDlg.setMethodTitle(QObject::tr("Exporting blocks as meshes"));
-		pDlg.update(0);
-		pDlg.start();
-
-		//we create a new group to store all output meshes as 'VoxFall clusters'
-		ccHObject* ccGroup = new ccHObject(s_VoxFallParams.groupName);
-
-		//we pair volumes with the labels vector and sort them by volume
-		std::vector<std::pair<float, int>> pairVolumeLabel(s_VoxFallParams.volumes.size());
-		for (int i = 0; i < s_VoxFallParams.volumes.size(); i++)
-		{
-			pairVolumeLabel[i] = { s_VoxFallParams.volumes[i], i + 1};
-		}
-		std::sort(pairVolumeLabel.begin(), pairVolumeLabel.end(), [](const std::pair<float, int>& a, const std::pair<float, int>& b) {
-			return a.first > b.first;  // Compare by the first element (int) in descending order
-		});
-
-		for (int k = 1; k < s_VoxFallParams.clusterLabel; k++)
-		{
-			auto volume = pairVolumeLabel[k - 1].first;
-			auto label = pairVolumeLabel[k - 1].second;
-
-			std::vector<unsigned int> indices;
-			auto it = std::find(s_VoxFallParams.clusters.begin(), s_VoxFallParams.clusters.end(), label);
-			while (it != s_VoxFallParams.clusters.end())
-			{
-				indices.push_back(it - s_VoxFallParams.clusters.begin());
-				it = std::find(it + 1, s_VoxFallParams.clusters.end(), label);
-			}
-
-			// we initiate the cluster cloud and mesh to add vertices and triangles of each voxel
-			ccPointCloud* clusterCloud = new ccPointCloud("Vertices");
-			ccMesh* clusterMesh = new ccMesh(clusterCloud);
-			
-			for (int i = 0; i < indices.size(); i++)
-			{
-				// we create the voxel box mesh
-				CCVector3 V;
-				s_VoxFallParams.voxfall->getPoint(indices[i], V);
-				auto voxel = qVoxFallTransform::CreateVoxelMesh(V, s_VoxFallParams.voxelSize, indices[i]);
-				ccPointCloud* voxelCloud = dynamic_cast<ccPointCloud*>(voxel->getAssociatedCloud());
-				voxelCloud->applyGLTransformation_recursive(&transform.inverse);
-
-				// we append voxel vertices in the cluster cloud;
-				unsigned vertCount = clusterCloud->size();
-				clusterCloud->append(voxelCloud, clusterCloud->size());
-
-				// we add triangles from the voxel mesh to the cluster mesh
-				for (unsigned i = 0; i < voxel->size(); ++i)
-				{
-					auto tri = voxel->getTriangleVertIndexes(i);
-					clusterMesh->addTriangle(tri->i1+vertCount, tri->i2+vertCount, tri->i3+vertCount);
-				}
-
-				//progress bar
-				if (!nProgress.oneStep())
-				{
-					return false;
-				}
-			}
-			clusterMesh->setName(QString("Cluster#%1 - (v: %2 m3)").arg(label).arg(volume));
-			clusterMesh->computePerVertexNormals();
-			clusterCloud->resize(clusterCloud->size());
-			clusterMesh->addChild(clusterCloud);
-			ccGroup->addChild(clusterMesh);
-			indices.clear();
-		}
-		ccGroup->setVisible(true);
-		if (app)
-		{
-			app->addToDB(ccGroup);
-		}
-		else
-		{
-			// command line mode
-			outputGroup = ccGroup;
-		}
-
-		qint64 meshTime_ms = meshTimer.elapsed();
-		//we display block as mesh export timing only if no error occurred!
-		if (app)
-		{
-			app->dispToConsole(QString("[VoxFall] Block as mesh export: %1 s").arg(meshTime_ms / 1000.0, 0, 'f', 3),
-				ccMainAppInterface::STD_CONSOLE_MESSAGE);
-		}
-	}
-
-
-// 	   OUTPUT FORMATION
-//=======================================================================================================================
-		
-	//associate cluster ID scalar fields to the voxel grid
-	int sfIdx = -1;
-	if (s_VoxFallParams.clusterSF)
-	{
-		//add cluster ID SF to voxel grid
-		s_VoxFallParams.clusterSF->computeMinAndMax();
-		sfIdx = s_VoxFallParams.voxfall->addScalarField(s_VoxFallParams.clusterSF);
-	}
-	if (s_VoxFallParams.exportLossGain)
-	{
-		//associate change type scalar fields to the voxel grid
-		if (s_VoxFallParams.changeTypeSF)
-		{
-			//add cluster ID SF to voxel grid
-			s_VoxFallParams.changeTypeSF->computeMinAndMax();
-			sfIdx = s_VoxFallParams.voxfall->addScalarField(s_VoxFallParams.changeTypeSF);
-		}
-	}
-	//associate volume scalar field to the voxel grid
-	if (s_VoxFallParams.volumeSF)
-	{
-		//add volume SF to voxel grid
-		s_VoxFallParams.volumeSF->computeMinAndMax();
-		sfIdx = s_VoxFallParams.voxfall->addScalarField(s_VoxFallParams.volumeSF);
-	}
-	//associate volume uncertainty scalar field to the voxel grid
-	if (s_VoxFallParams.uncertaintySF)
-	{
-		//add volume uncertainty SF to voxel grid
-		s_VoxFallParams.uncertaintySF->computeMinAndMax();
-		sfIdx = s_VoxFallParams.voxfall->addScalarField(s_VoxFallParams.uncertaintySF);
-	}
-
-	//prepare export cloud
-	mesh1->applyGLTransformation_recursive(&transform.inverse);
-	s_VoxFallParams.voxfall->applyGLTransformation_recursive(&transform.inverse);
-	sfIdx = s_VoxFallParams.voxfall->getScalarFieldIndexByName(CLUSTER_SF_NAME);
-	s_VoxFallParams.voxfall->setCurrentDisplayedScalarField(sfIdx);;
-	s_VoxFallParams.voxfall->showSF(true);
-	if (s_VoxFallParams.exportBlocksAsMeshes)
-	{
-		s_VoxFallParams.voxfall->setEnabled(false);
-	}
-	if (app)
-	{
-		app->addToDB(s_VoxFallParams.voxfall);
+		app->addToDB(appCloud);
+		if (exportBlockMeshes)
+			appGroup->setVisible(true);
+			app->addToDB(appGroup);
 	}
 	else
 	{
-		// command line mode
-		outputCloud = s_VoxFallParams.voxfall;
+		outputCloud = appCloud;
+		if (exportBlockMeshes) outputGroup = appGroup;
 	}
-	
+
+	qint64 processTime_ms = processTimer.elapsed();
+	//we display block as mesh export timing only if no error occurred!
+	if (app)
+	{
+		app->dispToConsole(QString("[VoxFall] VoxFall computation: %1 s").arg(processTime_ms / 1000.0, 0, 'f', 3),
+			ccMainAppInterface::STD_CONSOLE_MESSAGE);
+	}
+
+
 	//if "generate report" is selected, open CSV file
-	if (s_VoxFallParams.genarateReport)
+	if (generateReport)
 	{
 
 		QString filename = dlg.destinationPathLineEdit->text();
@@ -820,7 +225,7 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 		}
 		//write header
 		QTextStream outStream(&outFile);
-		outStream << s_VoxFallParams.groupName << " \n\n";
+		outStream << sessionName << " \n\n";
 		outStream << "Cluster ID,";
 		outStream << " Center X,";
 		outStream << " Center Y,";
@@ -834,42 +239,42 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 		outStream << " \n";
 
 		//add info line for each cluster
-		for (int label = 1; label < s_VoxFallParams.clusterLabel; ++label)
+		for (int label = 1; label < patchFirstLabel; ++label)
 		{
 			//get data from cluster cloud
-			ccPointCloud* cluster = s_VoxFallParams.voxfall->filterPointsByScalarValue(static_cast<ScalarType>(label), static_cast<ScalarType>(label));
+			ccPointCloud* cluster = outputCloud->filterPointsByScalarValue(static_cast<ScalarType>(label), static_cast<ScalarType>(label));
 			ccBBox bb = cluster->getOwnBB();
 			CCVector3 centroid = bb.getCenter();
 			CCVector3d extent = bb.maxCorner() - bb.minCorner();
+
 			sfIdx = cluster->getScalarFieldIndexByName(VOLUME_SF_NAME);
 			cluster->setCurrentDisplayedScalarField(sfIdx);;
 			auto volume = cluster->getPointScalarValue(static_cast<unsigned int>(0));
+
 			sfIdx = cluster->getScalarFieldIndexByName(UNCERTAINTY_SF_NAME);
 			cluster->setCurrentDisplayedScalarField(sfIdx);;
 			auto uncertainty = cluster->getPointScalarValue(static_cast<unsigned int>(0));
-			auto loss_gain = "n/a";
-			if (s_VoxFallParams.exportLossGain)
-			{
-				sfIdx = cluster->getScalarFieldIndexByName(CHANGE_TYPE_SF_NAME);
-				cluster->setCurrentDisplayedScalarField(sfIdx);;
-				auto changeType = cluster->getPointScalarValue(static_cast<unsigned int>(0));
 
-				if (s_VoxFallParams.changeType == -1)
-				{
-					loss_gain = "loss";
-				}
-				else
-				{
-					loss_gain = "gain";
-				}
+			auto loss_gain = "n/a";
+			sfIdx = cluster->getScalarFieldIndexByName(CHANGE_TYPE_SF_NAME);
+			cluster->setCurrentDisplayedScalarField(sfIdx);;
+			auto changeType = cluster->getPointScalarValue(static_cast<unsigned int>(0));
+
+			if (changeType == -1)
+			{
+				loss_gain = "loss";
+			}
+			else
+			{
+				loss_gain = "gain";
 			}
 			
 			//add data to file
 			outStream << label << ","; //cluster ID
 			outStream << centroid.x << "," << centroid.y << "," << centroid.z << ","; //center XYZ
-			if (extent.x > 0) { outStream << extent.x << ","; } else { outStream << s_VoxFallParams.voxelSize << ","; }; //extent X
-			if (extent.y > 0) { outStream << extent.y << ","; } else { outStream << s_VoxFallParams.voxelSize << ","; }; //extent Y
-			if (extent.z > 0) { outStream << extent.z << ","; } else { outStream << s_VoxFallParams.voxelSize << ","; }; //extent Z
+			if (extent.x > 0) { outStream << extent.x << ","; } else { outStream << voxelSize << ","; }; //extent X
+			if (extent.y > 0) { outStream << extent.y << ","; } else { outStream << voxelSize << ","; }; //extent Y
+			if (extent.z > 0) { outStream << extent.z << ","; } else { outStream << voxelSize << ","; }; //extent Z
 			outStream << loss_gain << ","; //change type (loss/gain)
 			outStream << volume << ","; //volume
 			outStream << uncertainty << ","; //uncertainty

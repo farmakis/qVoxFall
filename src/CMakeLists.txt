@@ -6,4 +6,5 @@ target_sources( ${PROJECT_NAME}
 		${CMAKE_CURRENT_LIST_DIR}/qVoxFallDisclaimerDialog.cpp
 		${CMAKE_CURRENT_LIST_DIR}/qVoxFallProcess.cpp
 		${CMAKE_CURRENT_LIST_DIR}/qVoxFallTools.cpp
+		${CMAKE_CURRENT_LIST_DIR}/qVoxFallCore.cpp
 )

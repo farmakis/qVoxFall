@@ -7,6 +7,7 @@ target_sources( ${PROJECT_NAME}
 		${CMAKE_CURRENT_LIST_DIR}/qVoxFallProcess.h
 		${CMAKE_CURRENT_LIST_DIR}/qVoxFallTools.h
 		${CMAKE_CURRENT_LIST_DIR}/qVoxFallCommands.h
+		${CMAKE_CURRENT_LIST_DIR}/qVoxFallCore.h
 )
 
 target_include_directories( ${PROJECT_NAME}

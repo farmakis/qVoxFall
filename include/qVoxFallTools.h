@@ -20,6 +20,8 @@
 
 //CCCoreLib
 #include <GenericProgressCallback.h>
+#include <DistanceComputationTools.h>
+#include <MeshSamplingTools.h>
 
 //local
 #include "qVoxFallDialog.h"
@@ -30,6 +32,7 @@
 #include <ccScalarField.h>
 #include <ccBox.h>
 #include <ccGLMatrix.h>
+#include <ccProgressDialog.h>
 
 
 #include <unordered_map>
@@ -76,7 +79,19 @@ public:
 
 	static int Grid2Index(Tuple3i n, CCVector3 steps);
 
+	static bool IsGridCorner(const Tuple3i& V, const CCVector3& steps);
+
 	static Tuple3i Index2Grid(unsigned index, CCVector3 steps);
+
+	static ccBBox ScaleBBox(const ccBBox& bbox, float a);
+
+	static ccMesh* CropMeshByBBox(const ccMesh* mesh, const ccBBox& bbox);
+
+	static int GetBestOctreeLevel(double maxSearchDist, ccPointCloud* m_compCloud, ccMesh* refMesh, ccOctree::Shared m_compOctree, ccOctree::Shared m_refOctree);
+
+	static bool ComputeDistances(ccMesh& compMesh, ccMesh& refMesh, ccProgressDialog pDlg, int threadCount, int& octreeLevel);
+
+	static bool ConnectedComponents(ccPointCloud* cloud, int octreeLevel, ccProgressDialog pDlg, QString& errorMessage);
 
 };
 
