@@ -466,9 +466,6 @@ bool qVoxFallCore::Run(	ccMesh* mesh,
 		errorMessage = "Failed to compute grid occupancy!";
 		return false;
 	}
-	//errorMessage = QString("[VoxFall] label for the next patch: %1").arg(patchFirstLabel);
-	//return true;
-
 
 // 	   COMPUTE VOLUMES
 //=======================================================================================================================
