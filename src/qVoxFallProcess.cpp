@@ -59,7 +59,6 @@ using namespace CCCoreLib;
 
 
 //! Default name for VoxFall scalar fields
-static const char OCCUPANCY_SF_NAME[] = "Occupancy";
 static const char CLUSTER_SF_NAME[] = "Cluster ID";
 static const char CHANGE_TYPE_SF_NAME[] = "Loss/gain";
 static const char VOLUME_SF_NAME[] = "Volume (m3)";
@@ -77,12 +76,16 @@ struct VoxFallParams
 	bool genarateReport = false;
 	bool exportBlocksAsMeshes = false;
 	bool exportLossGain = false;
-	CCVector3 minBound, maxBound, extent, steps;
+	Tuple3i size;
+	CCVector3 minBound, maxBound, extent;
 
 	//helpers
+	int nonEmptyCount = 0;
+	int exteriorCount = 0;
 	std::vector<std::vector<int>> nbs;
 	std::vector<bool> isEmpty;
 	std::vector<bool> isEmptyBefore;
+	std::vector<bool> isExterior;
 	std::vector<bool> nonEmptyVoxelsVisited;
 	std::vector<int> clusters;
 	int emptyVoxelCount = 0;
@@ -128,9 +131,9 @@ bool InitializeOutputCloud(int voxelCount, GenericProgressCallback* progressCb =
 	float voxelSize = s_VoxFallParams.voxelSize;
 	CCVector3 minBound = s_VoxFallParams.minBound;
 
-	for (int index = 0; index < voxelCount; ++index)
+	for (unsigned index = 0; index < voxelCount; ++index)
 	{
-		Tuple3i V = qVoxFallTools::Index2Grid(index, s_VoxFallParams.steps);
+		Tuple3i V = qVoxFallTools::Index2Grid(index, s_VoxFallParams.size);
 		CCVector3 P(static_cast<PointCoordinateType>(V.x * voxelSize + minBound.x),
 					static_cast<PointCoordinateType>(V.y * voxelSize + minBound.y),
 					static_cast<PointCoordinateType>(V.z * voxelSize + minBound.z));
@@ -149,15 +152,123 @@ bool InitializeOutputCloud(int voxelCount, GenericProgressCallback* progressCb =
 
 void GetVoxelOccupancy(const Tuple3i& cellPos, unsigned n)
 {
-	int index = qVoxFallTools::Grid2Index(cellPos, s_VoxFallParams.steps);
+	int index = qVoxFallTools::Grid2Index(cellPos, s_VoxFallParams.size);
 	s_VoxFallParams.isEmpty[index] = false;
+	s_VoxFallParams.nonEmptyCount++;
 }
 
 
 void GetVoxelOccupancyBefore(const Tuple3i& cellPos, unsigned n)
 {
-	int index = qVoxFallTools::Grid2Index(cellPos, s_VoxFallParams.steps);
+	int index = qVoxFallTools::Grid2Index(cellPos, s_VoxFallParams.size);
 	s_VoxFallParams.isEmptyBefore[index] = false;
+}
+
+
+bool BuildAdjacency(int maxThreads, int voxelCount, GenericProgressCallback* progressCb = nullptr)
+{
+	//progress notification
+	NormalizedProgress nProgress(progressCb, voxelCount);
+	if (progressCb)
+	{
+		if (progressCb->textCanBeEdited())
+		{
+			char buffer[64];
+			snprintf(buffer, 64, "Bulding adjacency \n Voxels: %u", voxelCount);
+			progressCb->setInfo(buffer);
+			progressCb->setMethodTitle("VoxFall Detection");
+		}
+		progressCb->update(0);
+		progressCb->start();
+	}
+
+	auto size = s_VoxFallParams.size;
+	s_VoxFallParams.nbs.resize(voxelCount);
+//#if defined(_OPENMP)
+//#pragma omp parallel for schedule(static) \
+//        num_threads(maxThreads)
+//#endif
+	for (int index = 0; index < voxelCount; ++index) {
+		auto V = qVoxFallTools::Index2Grid(index, size);
+		auto NN = qVoxFallTools::FindAdjacents(V, size, false);
+		if (V.x == 0 || V.y == 0 || V.z == 0 || V.x == size.x - 1 || V.y == size.y - 1 || V.z == size.z - 1)
+		{
+			if (s_VoxFallParams.isEmpty[index])
+			{
+				s_VoxFallParams.isExterior[index] = true;
+				s_VoxFallParams.exteriorCount++;
+				s_VoxFallParams.clusterSF->setValue(index, static_cast<ScalarType>(0.0));
+			}
+		}
+		for (auto const& n : NN)
+		{
+			int nIdx = qVoxFallTools::Grid2Index(n, size);
+			s_VoxFallParams.nbs[index].push_back(nIdx);
+		}
+		nProgress.oneStep();
+//#if defined(_OPENMP)
+//#pragma omp critical(BuildAdjacency)
+//		{ nProgress.oneStep(); }
+//#endif
+	}
+	return true;
+}
+
+
+bool FloodFillExterior(int maxThreads, int voxelCount, GenericProgressCallback* progressCb = nullptr)
+{
+	//progress notification
+	NormalizedProgress nProgress(progressCb, voxelCount);
+	if (progressCb)
+	{
+		if (progressCb->textCanBeEdited())
+		{
+			char buffer[64];
+			int voxelsToProcess = voxelCount - s_VoxFallParams.nonEmptyCount;
+			snprintf(buffer, 64, "Filtering exterior space \n Voxels: %u", voxelsToProcess);
+			progressCb->setInfo(buffer);
+			progressCb->setMethodTitle("VoxFall Detection");
+		}
+		progressCb->update(0);
+		progressCb->start();
+	}
+
+	auto size = s_VoxFallParams.size;
+//#if defined(_OPENMP)
+//#pragma omp parallel for schedule(dynamic) \
+//        num_threads(maxThreads)
+//#endif
+	for (int index = 0; index < voxelCount; ++index)
+	{
+		// if the voxel is not exterior air, skip it
+		if (!(s_VoxFallParams.isExterior[index]))
+		{
+			continue;
+		}
+
+		//get the grid position and neighbors of the voxel
+		auto V = qVoxFallTools::Index2Grid(index, size);
+		auto NN = qVoxFallTools::FindAdjacents(V, size, false);
+
+		for (auto const& n : NN)
+		{
+			int nIdx = qVoxFallTools::Grid2Index(n, size);
+
+
+			if (s_VoxFallParams.isEmpty[nIdx])
+			{
+				s_VoxFallParams.isExterior[nIdx] = true;
+				s_VoxFallParams.exteriorCount++;
+				s_VoxFallParams.clusterSF->setValue(nIdx, static_cast<ScalarType>(0.0));
+			}
+		}
+		nProgress.oneStep();
+//#if defined(_OPENMP)
+//#pragma omp critical(FloodFillExterior)
+//		{ nProgress.oneStep(); }
+//#endif
+	}
+	return true;
 }
 
 
@@ -170,7 +281,8 @@ bool ClusterEmptySpace(int maxThreads, int voxelCount, GenericProgressCallback* 
 		if (progressCb->textCanBeEdited())
 		{
 			char buffer[64];
-			snprintf(buffer, 64, "Clustering empty space \n Voxels: %u", voxelCount);
+			int voxelsToProcess = voxelCount - s_VoxFallParams.nonEmptyCount - s_VoxFallParams.exteriorCount;
+			snprintf(buffer, 64, "Clustering empty space \n Voxels: %u", voxelsToProcess);
 			progressCb->setInfo(buffer);
 			progressCb->setMethodTitle("VoxFall Detection");
 		}
@@ -178,30 +290,10 @@ bool ClusterEmptySpace(int maxThreads, int voxelCount, GenericProgressCallback* 
 		progressCb->start();
 	}
 
-	auto steps = s_VoxFallParams.steps;
-	s_VoxFallParams.nbs.resize(voxelCount);
-#if defined(_OPENMP)
-#pragma omp parallel for schedule(static) \
-        num_threads(maxThreads)
-#endif
-	for (int index = 0; index < voxelCount; ++index) {
-		auto V = qVoxFallTools::Index2Grid(index, steps);
-		auto NN = qVoxFallTools::FindAdjacents(V, steps, false);
-		for (auto const& n : NN)
-		{
-			int nIdx = qVoxFallTools::Grid2Index(n, steps);
-			s_VoxFallParams.nbs[index].push_back(nIdx);
-		}
-		//nProgress.oneStep();
-#if defined(_OPENMP)
-#pragma omp critical(ClusterEmptySpace)
-		{ nProgress.oneStep(); }
-#endif
-	}
 	for (int index = 0; index < voxelCount; ++index)
 	{
-		// Check if voxel is empty.
-		if (!s_VoxFallParams.isEmpty[index])
+		// Check if voxel is occupied or exterior air.
+		if ((!s_VoxFallParams.isEmpty[index]) || s_VoxFallParams.isExterior[index])
 			continue;
 
 		// Label is not undefined.
@@ -238,7 +330,7 @@ bool ClusterEmptySpace(int maxThreads, int voxelCount, GenericProgressCallback* 
 			unsigned nb = *nbs_next.begin();
 			nbs_next.erase(nbs_next.begin());
 			// Check empty neighbor.
-			if (!s_VoxFallParams.isEmpty[nb])
+			if ((!s_VoxFallParams.isEmpty[nb]) || s_VoxFallParams.isExterior[nb])
 			{
 				continue;
 			}
@@ -329,10 +421,10 @@ bool ComputeClusterVolume(int maxThreads, int clusterCount, ccHObject* clusterGr
 
 				if (s_VoxFallParams.exportLossGain)
 				{
-					Tuple3i V = qVoxFallTools::Index2Grid(nb, s_VoxFallParams.steps);
+					Tuple3i V = qVoxFallTools::Index2Grid(nb, s_VoxFallParams.size);
 					CCVector3 voxel(static_cast<PointCoordinateType>(V.x * s_VoxFallParams.voxelSize + s_VoxFallParams.minBound.x),
-						static_cast<PointCoordinateType>(V.y * s_VoxFallParams.voxelSize + s_VoxFallParams.minBound.y),
-						static_cast<PointCoordinateType>(V.z * s_VoxFallParams.voxelSize + s_VoxFallParams.minBound.z));
+									static_cast<PointCoordinateType>(V.y * s_VoxFallParams.voxelSize + s_VoxFallParams.minBound.y),
+									static_cast<PointCoordinateType>(V.z * s_VoxFallParams.voxelSize + s_VoxFallParams.minBound.z));
 
 					if (voxel.x > maxBound.x) maxBound.x = static_cast<PointCoordinateType>(voxel.x);
 					if (voxel.y > maxBound.y) maxBound.y = static_cast<PointCoordinateType>(voxel.y);
@@ -425,38 +517,31 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 	s_VoxFallParams.minBound = mesh->getOwnBB().minCorner();
 	s_VoxFallParams.maxBound = mesh->getOwnBB().maxCorner();
 	s_VoxFallParams.extent = s_VoxFallParams.maxBound - s_VoxFallParams.minBound;
-	s_VoxFallParams.steps = (s_VoxFallParams.extent / s_VoxFallParams.voxelSize) + Vector3Tpl<float>(1, 1, 1);
+	s_VoxFallParams.size = Tuple3i(	static_cast<int>(ceil(s_VoxFallParams.extent.x / s_VoxFallParams.voxelSize)),
+									static_cast<int>(ceil(s_VoxFallParams.extent.y / s_VoxFallParams.voxelSize)),
+									static_cast<int>(ceil(s_VoxFallParams.extent.z / s_VoxFallParams.voxelSize)));
 	s_VoxFallParams.genarateReport = dlg.getGenerateReportActivation();
 	s_VoxFallParams.exportBlocksAsMeshes = dlg.getExportMeshesActivation();
 	s_VoxFallParams.exportLossGain = dlg.getLossGainActivation();
 	s_VoxFallParams.groupName = mesh1->getName() + "_to_" + mesh2->getName() + QString(" [VoxFall] (voxel %1m)").arg(s_VoxFallParams.voxelSize);
 	s_VoxFallParams.voxfall = new ccPointCloud(s_VoxFallParams.groupName);
 
-	//Initialize voxel grid
-	auto voxelGrid = CCCoreLib::Grid3D<int>();
-	if (!voxelGrid.init(	int(s_VoxFallParams.steps.x),
-							int(s_VoxFallParams.steps.y),
-							int(s_VoxFallParams.steps.z),
-							0	))  //margin
-	{
-		errorMessage = "Failed to initialize voxel grid!";
-		return false;
-	}
-
 	// Initialize heplpers
-	s_VoxFallParams.voxfall->reserve(voxelGrid.innerCellCount());
-	s_VoxFallParams.nbs.resize(voxelGrid.innerCellCount());
-	s_VoxFallParams.isEmpty.resize(voxelGrid.innerCellCount(), true);
-	s_VoxFallParams.isEmptyBefore.resize(voxelGrid.innerCellCount(), true);
+	int voxelCount = s_VoxFallParams.size.x * s_VoxFallParams.size.y * s_VoxFallParams.size.z;
+	s_VoxFallParams.voxfall->reserve(voxelCount);
+	s_VoxFallParams.nbs.resize(voxelCount);
+	s_VoxFallParams.isEmpty.resize(voxelCount, true);
+	s_VoxFallParams.isEmptyBefore.resize(voxelCount, true);
+	s_VoxFallParams.isExterior.resize(voxelCount, false);
 	if (s_VoxFallParams.exportBlocksAsMeshes)
 	{
-		s_VoxFallParams.clusters.resize(voxelGrid.innerCellCount(), 0);
+		s_VoxFallParams.clusters.resize(voxelCount, 0);
 	}
 
 	//allocate cluster ID SF
 	s_VoxFallParams.clusterSF = new ccScalarField(CLUSTER_SF_NAME);
 	s_VoxFallParams.clusterSF->link();
-	if (!s_VoxFallParams.clusterSF->resizeSafe(voxelGrid.innerCellCount(), true, static_cast<ScalarType>(-1.0)))
+	if (!s_VoxFallParams.clusterSF->resizeSafe(voxelCount, true, static_cast<ScalarType>(-1.0)))
 	{
 		errorMessage = "Failed to allocate memory for cluster ID values!";
 		return false;
@@ -467,7 +552,7 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 		//allocate change type SF
 		s_VoxFallParams.changeTypeSF = new ccScalarField(CHANGE_TYPE_SF_NAME);
 		s_VoxFallParams.changeTypeSF->link();
-		if (!s_VoxFallParams.changeTypeSF->resizeSafe(voxelGrid.innerCellCount(), true, CCCoreLib::NAN_VALUE))
+		if (!s_VoxFallParams.changeTypeSF->resizeSafe(voxelCount, true, CCCoreLib::NAN_VALUE))
 		{
 			errorMessage = "Failed to allocate memory for change type values!";
 			return false;
@@ -476,7 +561,7 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 	//allocate volume SF
 	s_VoxFallParams.volumeSF = new ccScalarField(VOLUME_SF_NAME);
 	s_VoxFallParams.volumeSF->link();
-	if (!s_VoxFallParams.volumeSF->resizeSafe(voxelGrid.innerCellCount(), true, CCCoreLib::NAN_VALUE))
+	if (!s_VoxFallParams.volumeSF->resizeSafe(voxelCount, true, CCCoreLib::NAN_VALUE))
 	{
 		errorMessage = "Failed to allocate memory for volume values!";
 		return false;
@@ -484,14 +569,14 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 	//allocate volume uncertainty SF
 	s_VoxFallParams.uncertaintySF = new ccScalarField(UNCERTAINTY_SF_NAME);
 	s_VoxFallParams.uncertaintySF->link();
-	if (!s_VoxFallParams.uncertaintySF->resizeSafe(voxelGrid.innerCellCount(), true, CCCoreLib::NAN_VALUE))
+	if (!s_VoxFallParams.uncertaintySF->resizeSafe(voxelCount, true, CCCoreLib::NAN_VALUE))
 	{
 		errorMessage = "Failed to allocate memory for volume uncertainty values!";
 		return false;
 	}
 
 	// Initialize output cloud
-	if (!InitializeOutputCloud(voxelGrid.innerCellCount(), &pDlg))
+	if (!InitializeOutputCloud(voxelCount, &pDlg))
 	{
 		errorMessage = "Failed to initialize output data!";
 		return false;
@@ -506,6 +591,89 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 	}
 
 
+// 	   GRID COMPUTATION
+//=======================================================================================================================
+
+	//Duration: grid computation
+	QElapsedTimer gridTimer;
+	gridTimer.start();
+
+	//Initialize voxel grid
+	auto voxelGrid = CCCoreLib::Grid3D<int>();
+	if (!voxelGrid.init(s_VoxFallParams.size.x,
+						s_VoxFallParams.size.y,
+						s_VoxFallParams.size.z,
+						0))  //margin
+	{
+		errorMessage = "Failed to initialize voxel grid!";
+		return false;
+	}
+
+	//compute occupancy
+	if (!voxelGrid.intersectWith(mesh,
+								s_VoxFallParams.voxelSize,
+								s_VoxFallParams.minBound,
+								GetVoxelOccupancy,
+								&pDlg))
+	{
+		errorMessage = "Failed to compute grid occupancy!";
+		return false;
+	}
+
+	if (s_VoxFallParams.exportLossGain)
+	{
+		if (!voxelGrid.intersectWith(mesh1,
+									s_VoxFallParams.voxelSize,
+									s_VoxFallParams.minBound,
+									GetVoxelOccupancyBefore,
+									&pDlg))
+		{
+			errorMessage = "Failed to compute grid occupancy!";
+			return false;
+		}
+	}
+
+	//Build adjacency
+	if (!BuildAdjacency(maxThreadCount,
+						voxelCount,
+						&pDlg))
+	{
+		errorMessage = "Failed to build adjacency!";
+		return false;
+	}
+
+	qint64 gridTime_ms = gridTimer.elapsed();
+	//we display init. timing only if no error occurred!
+	if (app)
+	{
+		app->dispToConsole(QString("[VoxFall] Grid computation: %1 s").arg(gridTime_ms / 1000.0, 0, 'f', 3),
+			ccMainAppInterface::STD_CONSOLE_MESSAGE);
+	}
+
+// 	   EXTERIOR AIR FILTERING
+//=======================================================================================================================
+
+	//Duration: Exterior filtering
+	QElapsedTimer exterTimer;
+	exterTimer.start();
+
+	//filter exterior air
+	if (!FloodFillExterior(	maxThreadCount,
+							voxelCount,
+							&pDlg))
+	{
+		errorMessage = "Failed to compelete exterior air filtering!";
+		return false;
+	}
+
+	qint64 exterTime_ms = exterTimer.elapsed();
+	//we display block extraction timing only if no error occurred!
+	if (app)
+	{
+		app->dispToConsole(QString("[VoxFall] Exterior filtering: %1 s").arg(exterTime_ms / 1000.0, 0, 'f', 3),
+			ccMainAppInterface::STD_CONSOLE_MESSAGE);
+	}
+
 // 	   BLOCK DETECTION
 //=======================================================================================================================
 
@@ -513,36 +681,12 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 	QElapsedTimer detectTimer;
 	detectTimer.start();
 
-	if (!voxelGrid.intersectWith(	mesh,
-									s_VoxFallParams.voxelSize,
-									s_VoxFallParams.minBound,
-									GetVoxelOccupancy,
-									&pDlg	))
-	{
-		errorMessage = "Failed to compute  grid occupancy!";
-		return false;
-	}
-
-
-	if (s_VoxFallParams.exportLossGain)
-	{
-		if (!voxelGrid.intersectWith(mesh1,
-			s_VoxFallParams.voxelSize,
-			s_VoxFallParams.minBound,
-			GetVoxelOccupancyBefore,
-			&pDlg))
-		{
-			errorMessage = "Failed to compute  grid occupancy!";
-			return false;
-		}
-	}
-
 	//cluster DBSCAN
 	if (!ClusterEmptySpace(	maxThreadCount,
-							voxelGrid.innerCellCount(),
+							voxelCount,
 							&pDlg	))
 	{
-		errorMessage = "Failed to compute grid occupancy!";
+		errorMessage = "Failed to complete empty space clustering!";
 		return false;
 	}
 
@@ -753,7 +897,7 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 // 	   OUTPUT FORMATION
 //=======================================================================================================================
 		
-	//associate cluster ID scalar fields to the voxel grid
+	//associate cluster ID scalar field to the voxel grid
 	int sfIdx = -1;
 	if (s_VoxFallParams.clusterSF)
 	{
@@ -763,7 +907,7 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 	}
 	if (s_VoxFallParams.exportLossGain)
 	{
-		//associate change type scalar fields to the voxel grid
+		//associate change type scalar field to the voxel grid
 		if (s_VoxFallParams.changeTypeSF)
 		{
 			//add cluster ID SF to voxel grid

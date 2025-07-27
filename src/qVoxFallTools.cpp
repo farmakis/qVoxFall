@@ -50,9 +50,7 @@ ccBox* qVoxFallTransform::CreateVoxelMesh(CCVector3 V, float voxelSize, int voxe
 	return voxel;
 }
 
-
-
-std::vector<Tuple3i> qVoxFallTools::FindAdjacents(Tuple3i V, CCVector3 steps, bool facetsOnly=false)
+std::vector<Tuple3i> qVoxFallTools::FindAdjacents(Tuple3i V, Tuple3i steps, bool facetsOnly=false)
 {
 	std::vector<Tuple3i> set;
 	std::vector<std::vector<int>> adjacencyMatrix;
@@ -97,8 +95,7 @@ std::vector<Tuple3i> qVoxFallTools::FindAdjacents(Tuple3i V, CCVector3 steps, bo
 	return set;
 }
 
-
-int qVoxFallTools::Grid2Index(Tuple3i n, CCVector3 steps)
+int qVoxFallTools::Grid2Index(Tuple3i n, Tuple3i steps)
 {
 	int i = n.x;
 	int j = n.y;
@@ -108,8 +105,7 @@ int qVoxFallTools::Grid2Index(Tuple3i n, CCVector3 steps)
 	return index;
 }
 
-
-Tuple3i qVoxFallTools::Index2Grid(unsigned index, CCVector3 steps)
+Tuple3i qVoxFallTools::Index2Grid(unsigned index, Tuple3i steps)
 {
 	int k = std::floor(index / (int(steps.y) * int(steps.x)));
 	int remain = index - (int(steps.y) * int(steps.x) * k);

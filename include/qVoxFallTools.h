@@ -72,11 +72,11 @@ class qVoxFallTools
 {
 public:
 
-	static std::vector<Tuple3i> FindAdjacents(Tuple3i V, CCVector3 steps, bool facetsOnly);
+	static std::vector<Tuple3i> FindAdjacents(Tuple3i V, Tuple3i steps, bool facetsOnly);
 
-	static int Grid2Index(Tuple3i n, CCVector3 steps);
+	static int Grid2Index(Tuple3i n, Tuple3i steps);
 
-	static Tuple3i Index2Grid(unsigned index, CCVector3 steps);
+	static Tuple3i Index2Grid(unsigned index, Tuple3i steps);
 
 };
 
