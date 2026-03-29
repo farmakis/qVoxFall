@@ -1,3 +1,4 @@
 [submodule "gcl"]
 	path = external/gcl
 	url = https://github.com/farmakis/graph-clustering.git
+	branch = main
