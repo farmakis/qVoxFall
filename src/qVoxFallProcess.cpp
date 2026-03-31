@@ -16,6 +16,7 @@
 //##########################################################################
 
 #include "qVoxFallProcess.h"
+#include "graph_clustering.h"
 
 //system
 #include <atomic>
@@ -80,6 +81,7 @@ struct VoxFallParams
 	CCVector3 minBound, maxBound, extent, steps;
 
 	//helpers
+	std::vector<int> edges;
 	std::vector<std::vector<int>> nbs;
 	std::vector<bool> isEmpty;
 	std::vector<bool> isEmptyBefore;
@@ -161,7 +163,7 @@ void GetVoxelOccupancyBefore(const Tuple3i& cellPos, unsigned n)
 }
 
 
-bool ClusterEmptySpace(int maxThreads, int voxelCount, GenericProgressCallback* progressCb = nullptr)
+bool ClusterEmptySpace(int maxThreads, int voxelCount, GenericProgressCallback* progressCb = nullptr, ccMainAppInterface* app = nullptr)
 {
 	//progress notification
 	NormalizedProgress nProgress(progressCb, voxelCount);
@@ -180,6 +182,9 @@ bool ClusterEmptySpace(int maxThreads, int voxelCount, GenericProgressCallback* 
 
 	auto steps = s_VoxFallParams.steps;
 	s_VoxFallParams.nbs.resize(voxelCount);
+
+	QElapsedTimer timerLoop1;
+	timerLoop1.start();
 #if defined(_OPENMP)
 #pragma omp parallel for schedule(static) \
         num_threads(maxThreads)
@@ -198,6 +203,13 @@ bool ClusterEmptySpace(int maxThreads, int voxelCount, GenericProgressCallback* 
 		{ nProgress.oneStep(); }
 #endif
 	}
+	qint64 elapsedLoop1 = timerLoop1.elapsed();
+	if (app) {
+		app->dispToConsole(QString("[VoxFall] Loop1 (edge/nbs build): %1 s").arg(elapsedLoop1 / 1000.0, 0, 'f', 3), ccMainAppInterface::STD_CONSOLE_MESSAGE);
+	}
+
+	QElapsedTimer timerDBSCAN;
+	timerDBSCAN.start();
 	for (int index = 0; index < voxelCount; ++index)
 	{
 		// Check if voxel is empty.
@@ -284,6 +296,112 @@ bool ClusterEmptySpace(int maxThreads, int voxelCount, GenericProgressCallback* 
 		}
 		s_VoxFallParams.clusterLabel++;
 	}
+	qint64 elapsedDBSCAN = timerDBSCAN.elapsed();
+	if (app) {
+		app->dispToConsole(QString("[VoxFall] DBSCAN: %1 s").arg(elapsedDBSCAN / 1000.0, 0, 'f', 3), ccMainAppInterface::STD_CONSOLE_MESSAGE);
+	}
+	return true;
+}
+
+
+bool ClusterEmptySpaceGCL(int maxThreads, int voxelCount, GenericProgressCallback* progressCb = nullptr, ccMainAppInterface* app = nullptr)
+{
+	//progress notification
+	NormalizedProgress nProgress(progressCb, voxelCount);
+	if (progressCb)
+	{
+		if (progressCb->textCanBeEdited())
+		{
+			char buffer[64];
+			snprintf(buffer, 64, "Clustering empty space \n Voxels: %u", voxelCount);
+			progressCb->setInfo(buffer);
+			progressCb->setMethodTitle("VoxFall Detection");
+		}
+		progressCb->update(0);
+		progressCb->start();
+	}
+
+	auto steps = s_VoxFallParams.steps;
+	s_VoxFallParams.nbs.resize(voxelCount);
+
+	QElapsedTimer timerLoop1;
+	timerLoop1.start();
+#if defined(_OPENMP)
+#pragma omp parallel for schedule(static) \
+		num_threads(maxThreads)
+#endif
+	for (int index = 0; index < voxelCount; ++index) 
+	{
+		auto V = qVoxFallTools::Index2Grid(index, steps);
+		auto NN = qVoxFallTools::FindAdjacents(V, steps, false);
+		for (auto const& n : NN) {
+			int n_index = qVoxFallTools::Grid2Index(n, steps);
+			s_VoxFallParams.nbs[index].push_back(n_index);
+			// If both querry and neighbor voxels are empty. create an edge between them.
+			if (s_VoxFallParams.isEmpty[index] && s_VoxFallParams.isEmpty[n_index])
+			{
+				if (index != n_index) // to avoid self-loops
+				{
+#if defined(_OPENMP)
+// Ensure thread safety for edges vector when running in parallel
+#pragma omp critical(edges)
+#endif      
+					{
+						s_VoxFallParams.edges.push_back(index);
+						s_VoxFallParams.edges.push_back(n_index);
+					}
+				}
+			}
+		}
+		// nProgress.oneStep();
+#if defined(_OPENMP)
+#pragma omp critical(ClusterEmptySpaceGCL)
+		{ nProgress.oneStep(); }
+#endif
+	}
+	qint64 elapsedLoop1 = timerLoop1.elapsed();
+	if (app) {
+		app->dispToConsole(QString("[VoxFall] Loop1 (edge/nbs build): %1 s").arg(elapsedLoop1 / 1000.0, 0, 'f', 3), ccMainAppInterface::STD_CONSOLE_MESSAGE);
+	}
+
+
+	QElapsedTimer timerLoop2;
+	timerLoop2.start();
+	auto labels = gcl::connected_components(voxelCount, s_VoxFallParams.edges);
+	// GCL Connected Components returns single-voxel clusters for each non-empty voxel,
+	// so we need to use the following trick to assign -1 to non-empty voxels and keep the cluster labels for actual empty voxels.
+	qint64 elapsedLoop2 = timerLoop2.elapsed();
+	if (app) {
+		app->dispToConsole(QString("[VoxFall] Loop2 (connected components): %1 s").arg(elapsedLoop2 / 1000.0, 0, 'f', 3), ccMainAppInterface::STD_CONSOLE_MESSAGE);
+	}
+	std::unordered_map<int, int> label_map;
+	int current_label = 0;
+
+	QElapsedTimer timerLoop3;
+	timerLoop3.start();
+	for (int index = 0; index < voxelCount; ++index)
+	{
+		if (s_VoxFallParams.isEmpty[index])
+		{
+			int orig_label = labels[index];
+			// Assign a new label if this original label hasn't been mapped yet
+			if (label_map.find(orig_label) == label_map.end())
+			{
+				label_map[orig_label] = current_label++;
+			}
+			s_VoxFallParams.clusterSF->setValue(index, static_cast<ScalarType>(label_map[orig_label]));
+		}
+		else
+		{
+			s_VoxFallParams.clusterSF->setValue(index, -1);
+		}
+	}
+	qint64 elapsedLoop3 = timerLoop3.elapsed();
+	if (app) {
+		app->dispToConsole(QString("[VoxFall] Loop3 (label remap): %1 s").arg(elapsedLoop3 / 1000.0, 0, 'f', 3), ccMainAppInterface::STD_CONSOLE_MESSAGE);
+	}
+	s_VoxFallParams.clusterLabel = current_label; // total number of clusters assigned to empty voxels
+
 	return true;
 }
 
@@ -509,9 +627,9 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 // 	   BLOCK DETECTION
 //=======================================================================================================================
 
-	//Duration: Detection
-	QElapsedTimer detectTimer;
-	detectTimer.start();
+	//Duration: Occupancy
+	QElapsedTimer occupTimer;
+	occupTimer.start();
 
 	if (!voxelGrid.intersectWith(	mesh,
 									s_VoxFallParams.voxelSize,
@@ -537,14 +655,36 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 		}
 	}
 
-	//cluster DBSCAN
-	if (!ClusterEmptySpace(	maxThreadCount,
+	qint64 occupTime_ms = occupTimer.elapsed();
+	if (app)
+	{
+		app->dispToConsole(QString("[VoxFall] Occupancy computation: %1 s").arg(occupTime_ms / 1000.0, 0, 'f', 3),
+			ccMainAppInterface::STD_CONSOLE_MESSAGE);
+	}
+
+	//Duration: Detection
+	QElapsedTimer detectTimer;
+	detectTimer.start();
+
+	//cluster GCL::CC
+	if (!ClusterEmptySpaceGCL(	maxThreadCount,
 							voxelGrid.innerCellCount(),
-							&pDlg	))
+							&pDlg,
+							app	))
 	{
 		errorMessage = "Failed to compute grid occupancy!";
 		return false;
 	}
+
+	// //cluster DBSCAN
+	// if (!ClusterEmptySpace(	maxThreadCount,
+	// 						voxelGrid.innerCellCount(),
+	// 						&pDlg,
+	// 						app	))
+	// {
+	// 	errorMessage = "Failed to compute grid occupancy!";
+	// 	return false;
+	// }
 
 	qint64 detectTime_ms = detectTimer.elapsed();
 	//we display block extraction timing only if no error occurred!
