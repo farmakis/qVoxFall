@@ -586,24 +586,10 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 		}
 	}
 
-	qint64 volumeTime_ms = volumeTimer.elapsed();
-	/* we display block volume computation timing only if no error occurred! */
-	if (app)
-	{
-		app->dispToConsole(QString("[VoxFall] Volume computation: %1 s").arg(volumeTime_ms / 1000.0, 0, 'f', 3),
-			ccMainAppInterface::STD_CONSOLE_MESSAGE);
-	}
-
-
-// 	   EXPORT BLOCKS AS VOXEL MESH MODELS (IF SELECTED)
-//=======================================================================================================================
+	/** Export blocks as voxel mesh models (if selected) **/
 
 	if (s_VoxFallParams.exportBlocksAsMeshes)
 	{
-		/** Export blocks as voxel mesh models **/
-		QElapsedTimer meshTimer;
-		meshTimer.start();
-
 		//progress notification
 		pDlg.reset();
 		NormalizedProgress nProgress(&pDlg, s_VoxFallParams.emptyVoxelCount);
@@ -646,14 +632,14 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 			// command line mode
 			outputGroup = ccGroup;
 		}
+	}
 
-		qint64 meshTime_ms = meshTimer.elapsed();
-		//we display block as mesh export timing only if no error occurred!
-		if (app)
-		{
-			app->dispToConsole(QString("[VoxFall] Block as mesh export: %1 s").arg(meshTime_ms / 1000.0, 0, 'f', 3),
-				ccMainAppInterface::STD_CONSOLE_MESSAGE);
-		}
+	qint64 volumeTime_ms = volumeTimer.elapsed();
+	/* we display block volume computation timing only if no error occurred! */
+	if (app)
+	{
+		app->dispToConsole(QString("[VoxFall] Volume computation: %1 s").arg(volumeTime_ms / 1000.0, 0, 'f', 3),
+			ccMainAppInterface::STD_CONSOLE_MESSAGE);
 	}
 
 
