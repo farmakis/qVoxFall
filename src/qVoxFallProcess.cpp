@@ -392,10 +392,6 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 	//progress dialog
 	ccProgressDialog pDlg(parentWidget);
 
-	//Duration: initialization
-	QElapsedTimer initTimer;
-	initTimer.start();
-
 	auto mesh = mesh1->cloneMesh();
 	mesh->merge(mesh2, false);
 
@@ -417,7 +413,11 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 	s_VoxFallParams.groupName = mesh1->getName() + "_to_" + mesh2->getName() + QString(" [VoxFall] (voxel %1m)").arg(s_VoxFallParams.voxelSize);
 	s_VoxFallParams.voxfall = new ccPointCloud(s_VoxFallParams.groupName);
 
-	/** Initialize voxel grid **/
+	/** Build Voxel Grid Graph **/
+	QElapsedTimer graphTimer;
+	graphTimer.start();
+
+	/* Initialize voxel grid for occupancy computation */
 	auto voxelGrid = CCCoreLib::Grid3D<int>();
 	if (!voxelGrid.init(	int(s_VoxFallParams.steps.x),
 							int(s_VoxFallParams.steps.y),
@@ -428,9 +428,7 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 		return false;
 	}
 
-	QElapsedTimer graphTimer;
-	graphTimer.start();
-	/** Computing voxel graph with 26 connectivity (1->6, 2->18, 3->26) **/
+	/* Computing voxel graph with 26 connectivity (1->6, 2->18, 3->26) */
 	s_VoxFallParams.voxelGraph = new qVoxFallGraph(voxelGrid.size(), 3);
 	qint64 graphTime_ms = graphTimer.elapsed();
 	if (app)
@@ -490,19 +488,11 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 		return false;
 	}
 
-	qint64 initTime_ms = initTimer.elapsed();
-	/* we display init. timing only if no error occurred! */
-	if (app)
-	{
-		app->dispToConsole(QString("[VoxFall] Initialization: %1 s").arg(initTime_ms / 1000.0, 0, 'f', 3),
-			ccMainAppInterface::STD_CONSOLE_MESSAGE);
-	}
-
 
 /* 	   BLOCK DETECTION
  * ======================================================================================================================= */
 
-	//Duration: Occupancy
+	/** Compute voxel occupancy **/
 	QElapsedTimer occupTimer;
 	occupTimer.start();
 
@@ -536,7 +526,7 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 			ccMainAppInterface::STD_CONSOLE_MESSAGE);
 	}
 
-	//Duration: Detection
+	/** Compute connected components of empty space **/
 	QElapsedTimer detectTimer;
 	detectTimer.start();
 
@@ -564,7 +554,7 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 /* 	   COMPUTE VOLUMES
  * ======================================================================================================================= */
 
-	//Duration: volume computation
+	/** Compute cluster volumes **/
 	QElapsedTimer volumeTimer;
 	volumeTimer.start();
 
@@ -610,7 +600,7 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 
 	if (s_VoxFallParams.exportBlocksAsMeshes)
 	{
-		//Duration: block meshing
+		/** Export blocks as voxel mesh models **/
 		QElapsedTimer meshTimer;
 		meshTimer.start();
 
