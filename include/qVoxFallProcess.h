@@ -20,7 +20,6 @@
 
 //Local
 #include "qVoxFallDialog.h"
-#include "graph_clustering.h"
 #include "grid_graph.hpp"
 
 //qCC
