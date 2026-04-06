@@ -35,6 +35,11 @@
 #include <ccNormalVectors.h>
 #include <Neighbourhood.h>
 
+#if defined(_OPENMP)
+//OpenMP
+#include <omp.h>
+#endif
+
 #define RAD2DEG (180.0 / M_PI)
 
 

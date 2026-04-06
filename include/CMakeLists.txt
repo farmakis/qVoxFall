@@ -5,8 +5,11 @@ target_sources( ${PROJECT_NAME}
 		${CMAKE_CURRENT_LIST_DIR}/qVoxFallDialog.h
 		${CMAKE_CURRENT_LIST_DIR}/qVoxFallDisclaimerDialog.h
 		${CMAKE_CURRENT_LIST_DIR}/qVoxFallProcess.h
-		${CMAKE_CURRENT_LIST_DIR}/qVoxFallTools.h
+		${CMAKE_CURRENT_LIST_DIR}/qVoxFallCluster.h
+		${CMAKE_CURRENT_LIST_DIR}/qVoxFallGraph.h
 		${CMAKE_CURRENT_LIST_DIR}/qVoxFallCommands.h
+		${CMAKE_CURRENT_LIST_DIR}/grid_graph.hpp
+		${CMAKE_CURRENT_LIST_DIR}/omp_num_threads.hpp
 )
 
 target_include_directories( ${PROJECT_NAME}
