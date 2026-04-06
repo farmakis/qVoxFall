@@ -25,7 +25,6 @@
 #include "qVoxFallDialog.h"
 #include "qVoxFallCluster.h"
 #include "qVoxFallGraph.h"
-#include "graph_clustering.h"
 #include "omp_num_threads.hpp"
 
 //CCCoreLib
