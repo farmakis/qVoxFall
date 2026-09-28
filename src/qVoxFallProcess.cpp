@@ -96,11 +96,11 @@ struct VoxFallParams
 	ccPointCloud* voxfall = nullptr;
 	QString groupName;
 
-	//scalar fields
-	ccScalarField* clusterSF = nullptr;			//cluster ID
-	ccScalarField* changeTypeSF = nullptr;		//loss or gain
-	ccScalarField* volumeSF = nullptr;			//block volume
-	ccScalarField* uncertaintySF = nullptr;		//volume uncertainty
+	// scalar fields
+	ccScalarField::Shared clusterSF;     // cluster ID
+	ccScalarField::Shared changeTypeSF;  // loss or gain
+	ccScalarField::Shared volumeSF;      // block volume
+	ccScalarField::Shared uncertaintySF; // volume uncertainty
 
 	//progress notification
 	CCCoreLib::NormalizedProgress* nProgress = nullptr;
@@ -454,8 +454,7 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 	}
 
 	//allocate cluster ID SF
-	s_VoxFallParams.clusterSF = new ccScalarField(CLUSTER_SF_NAME);
-	s_VoxFallParams.clusterSF->link();
+	s_VoxFallParams.clusterSF.reset(new ccScalarField(CLUSTER_SF_NAME));
 	if (!s_VoxFallParams.clusterSF->resizeSafe(voxelGrid.innerCellCount(), true, static_cast<ScalarType>(-1.0)))
 	{
 		errorMessage = "Failed to allocate memory for cluster ID values!";
@@ -465,8 +464,7 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 	if (s_VoxFallParams.exportLossGain)
 	{
 		//allocate change type SF
-		s_VoxFallParams.changeTypeSF = new ccScalarField(CHANGE_TYPE_SF_NAME);
-		s_VoxFallParams.changeTypeSF->link();
+		s_VoxFallParams.changeTypeSF.reset(new ccScalarField(CHANGE_TYPE_SF_NAME));
 		if (!s_VoxFallParams.changeTypeSF->resizeSafe(voxelGrid.innerCellCount(), true, CCCoreLib::NAN_VALUE))
 		{
 			errorMessage = "Failed to allocate memory for change type values!";
@@ -474,16 +472,14 @@ bool qVoxFallProcess::Compute(const qVoxFallDialog& dlg, QString& errorMessage, 
 		}
 	}
 	//allocate volume SF
-	s_VoxFallParams.volumeSF = new ccScalarField(VOLUME_SF_NAME);
-	s_VoxFallParams.volumeSF->link();
+	s_VoxFallParams.volumeSF.reset(new ccScalarField(VOLUME_SF_NAME));
 	if (!s_VoxFallParams.volumeSF->resizeSafe(voxelGrid.innerCellCount(), true, CCCoreLib::NAN_VALUE))
 	{
 		errorMessage = "Failed to allocate memory for volume values!";
 		return false;
 	}
 	//allocate volume uncertainty SF
-	s_VoxFallParams.uncertaintySF = new ccScalarField(UNCERTAINTY_SF_NAME);
-	s_VoxFallParams.uncertaintySF->link();
+	s_VoxFallParams.uncertaintySF.reset(new ccScalarField(UNCERTAINTY_SF_NAME));
 	if (!s_VoxFallParams.uncertaintySF->resizeSafe(voxelGrid.innerCellCount(), true, CCCoreLib::NAN_VALUE))
 	{
 		errorMessage = "Failed to allocate memory for volume uncertainty values!";
